@@ -14,7 +14,6 @@ import (
 	"github.com/kararnab/iam/provider"
 	"github.com/kararnab/iam/provider/inhouse"
 	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/token"
 	"github.com/kararnab/iam/token/jwt"
 	"github.com/kararnab/iam/token/keys"
 )
@@ -58,15 +57,24 @@ func newTestService(t *testing.T) *Service {
 	users := fakeUsers{"admin@example.com": {
 		ID: "u1", Email: "admin@example.com", PasswordHash: string(hash), Roles: []string{policy.Admin},
 	}}
-	kp := keys.NewMemoryProvider(keys.Key{ID: "k1", Key: []byte("0123456789abcdef0123456789abcdef")})
+	kp := keys.NewMemoryProvider(keys.Key{ID: "k1", Alg: keys.HS256, Secret: []byte("0123456789abcdef0123456789abcdef")})
+	jwtCfg := jwt.Config{Issuer: "test", Audience: "test-api", TTL: time.Minute}
+	issuer, err := jwt.NewIssuer(kp, jwtCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := jwt.NewVerifier(kp, jwtCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store := session.NewMemoryStore()
 	prov := inhouse.New(users)
 	svc, err := New(Options{
 		Providers:      map[string]provider.AuthProvider{prov.Name(): prov},
 		SessionManager: session.NewManager(store, time.Hour),
 		SessionStore:   store,
-		TokenIssuer:    jwt.NewIssuer(kp.ActiveKey().Key, "k1", "test", time.Minute),
-		TokenVerifier:  &token.MultiVerifier{Verifier: jwt.NewVerifier("test"), KeyProvider: kp},
+		TokenIssuer:    issuer,
+		TokenVerifier:  verifier,
 		PolicyEngine:   &policy.DefaultPolicy{},
 		AuditLogger:    nopAudit{},
 		Metrics:        nopMetrics{},

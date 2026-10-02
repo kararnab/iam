@@ -6,17 +6,15 @@ import "context"
 // and extracting embedded claims.
 //
 // Implementations must:
+//   - pin the expected algorithm per key (never trust the token header)
 //   - validate token integrity
-//   - validate expiry
+//   - validate issuer, audience and expiry
 //   - extract normalized claims
+//
+// Errors should wrap ErrInvalidToken (and ErrExpiredToken when expired).
 type Verifier interface {
 
 	// Verify validates an access token and returns its claims.
-	//
-	// TODO:
-	//   - Support multiple token formats simultaneously
-	//   - Key rotation / grace periods
-	//   - Optional introspection fallback
 	Verify(
 		ctx context.Context,
 		accessToken string,

@@ -17,8 +17,6 @@ func (d *DummyStore) Get(_ context.Context, name string) (string, error) {
 		return "p@$$w0rd1", nil
 	case "SECRET_USER_ID":
 		return "user-1", nil
-	case "SECRET_JWT_SIGNING_KEY":
-		return "dev-secret", nil
 	case "SECRET_PASETO_SIGNING_KEY":
 		return "", nil
 	case "GOOGLE_OAUTH_CLIENTID":

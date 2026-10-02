@@ -8,41 +8,43 @@ import (
 	"github.com/o1egl/paseto"
 
 	"github.com/kararnab/iam/token"
+	"github.com/kararnab/iam/token/keys"
 )
+
+// KeySize is the required symmetric key length.
+const KeySize = 32
 
 // Issuer implements token.Issuer using PASETO v2.local.
 //
-// Tokens are encrypted (not signed).
-// Key rotation is supported via embedded key ID ("kid").
+// Tokens are encrypted (not signed). The provider's active key is read on
+// every call, so rotation takes effect immediately.
+//
+// TODO (P8): move to PASETO v4 with a maintained library.
 type Issuer struct {
 	paseto *paseto.V2
-	key    []byte
-	keyID  string
+	keys   keys.Provider
 	issuer string
 	ttl    time.Duration
 }
 
-// NewIssuer creates a PASETO v2.local issuer.
-//
-// key MUST be 32 bytes.
-//
-// TODO (prod):
-//   - Support v4.public
+// NewIssuer creates a PASETO v2.local issuer. The active key's Secret must be
+// KeySize bytes.
 func NewIssuer(
-	key []byte,
-	keyID string,
+	kp keys.Provider,
 	issuer string,
 	ttl time.Duration,
 ) (*Issuer, error) {
 
-	if len(key) != 32 {
+	if kp == nil {
+		return nil, errors.New("paseto: key provider is required")
+	}
+	if len(kp.ActiveKey().Secret) != KeySize {
 		return nil, errors.New("paseto: key must be 32 bytes")
 	}
 
 	return &Issuer{
 		paseto: paseto.NewV2(),
-		key:    key,
-		keyID:  keyID,
+		keys:   kp,
 		issuer: issuer,
 		ttl:    ttl,
 	}, nil
@@ -54,6 +56,11 @@ func (i *Issuer) Issue(
 	claims token.Claims,
 ) (string, error) {
 
+	k := i.keys.ActiveKey()
+	if len(k.Secret) != KeySize {
+		return "", errors.New("paseto: key must be 32 bytes")
+	}
+
 	now := time.Now()
 
 	payload := map[string]any{
@@ -61,11 +68,11 @@ func (i *Issuer) Issue(
 		"sub": claims.SubjectID,
 		"iat": now.Unix(),
 		"exp": now.Add(i.ttl).Unix(),
-
-		// 🔑 Key rotation support
-		"kid": i.keyID,
 	}
 
+	if claims.SessionID != "" {
+		payload["sid"] = claims.SessionID
+	}
 	if len(claims.Roles) > 0 {
 		payload["roles"] = claims.Roles
 	}
@@ -73,10 +80,6 @@ func (i *Issuer) Issue(
 		payload["attrs"] = claims.Attrs
 	}
 
-	tkn, err := i.paseto.Encrypt(i.key, payload, nil)
-	if err != nil {
-		return "", err
-	}
-
-	return tkn, nil
+	// The key ID goes in the (authenticated, unencrypted) footer.
+	return i.paseto.Encrypt(k.Secret, payload, k.ID)
 }

@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
+	"flag"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -46,13 +49,16 @@ import (
 //
 
 const (
-	googleOAuthIssuerUrl = "https://accounts.google.com"
-	jwtIssuer            = "auth-monolith"
-	jwtAccessTTL         = 15 * time.Minute
-	sessionTTL           = 24 * time.Hour
+	tokenIssuer   = "iam-demo"
+	tokenAudience = "iam-demo-api"
+	accessTTL     = 10 * time.Minute
+	sessionTTL    = 24 * time.Hour
 )
 
 func main() {
+	dev := flag.Bool("dev", false, "development mode: generate a random signing key if IAM_SIGNING_KEY is unset")
+	flag.Parse()
+
 	// -------------------------------
 	// Logger
 	// -------------------------------
@@ -69,7 +75,7 @@ func main() {
 	// -------------------------------
 	// IAM + infra wiring
 	// -------------------------------
-	iamService, userStore, keyProvider, err := buildIAMService(iamMetrics)
+	iamService, userStore, keyProvider, err := buildIAMService(iamMetrics, *dev)
 	if err != nil {
 		slog.Error("failed to start IAM", "error", err)
 		os.Exit(1)
@@ -132,6 +138,7 @@ func newServer(addr string, h http.Handler) *http.Server {
 
 func buildIAMService(
 	iamMetrics metrics.IAMMetrics,
+	dev bool,
 ) (
 	iam.Service,
 	internalprov.UserStore,
@@ -146,7 +153,7 @@ func buildIAMService(
 	secretUserPassword, _ := store.Get(ctx, "SECRET_USER_PASSWORD")
 	secretUserId, _ := store.Get(ctx, "SECRET_USER_ID")
 	secretUserName, _ := store.Get(ctx, "SECRET_USERNAME")
-	secretJWTSigningKey, _ := store.Get(ctx, "SECRET_JWT_SIGNING_KEY")
+	secretSigningKey, _ := store.Get(ctx, "IAM_SIGNING_KEY")
 	secretPasetoSigningKey, _ := store.Get(ctx, "SECRET_PASETO_SIGNING_KEY")
 	googleOAuthClientID, _ := store.Get(ctx, "GOOGLE_OAUTH_CLIENTID")
 
@@ -177,7 +184,7 @@ func buildIAMService(
 	// -------------------------------
 	internalProvider := internalprov.New(userStore)
 	googleProvider := googleprov.New(googleOAuthClientID)
-	//or oidcProvider, _ := oidcprov.New(ctx, googleOAuthIssuerUrl, googleOAuthClientID)
+	//or oidcProvider, _ := oidcprov.New(ctx, "https://accounts.google.com", googleOAuthClientID)
 
 	providers := map[string]provider.AuthProvider{
 		internalProvider.Name(): internalProvider,
@@ -202,63 +209,38 @@ func buildIAMService(
 		keyProvider *keys.MemoryProvider
 	)
 
-	pasetoKeyB64 := secretPasetoSigningKey
-
-	if pasetoKeyB64 != "" {
-		rawKey, err := base64.StdEncoding.DecodeString(pasetoKeyB64)
+	if secretPasetoSigningKey != "" {
+		rawKey, err := base64.StdEncoding.DecodeString(secretPasetoSigningKey)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("invalid PASETO_KEY: %w", err)
-		}
-		if len(rawKey) != 32 {
-			return nil, nil, nil, fmt.Errorf("PASETO_KEY must be 32 bytes")
+			return nil, nil, nil, fmt.Errorf("invalid SECRET_PASETO_SIGNING_KEY: %w", err)
 		}
 
-		keyProvider = keys.NewMemoryProvider(keys.Key{
-			ID:  "paseto-1",
-			Key: rawKey,
-		})
+		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "paseto-1", Secret: rawKey})
 
-		issuer, err = paseto.NewIssuer(
-			keyProvider.ActiveKey().Key,
-			keyProvider.ActiveKey().ID,
-			jwtIssuer,
-			jwtAccessTTL,
-		)
+		issuer, err = paseto.NewIssuer(keyProvider, tokenIssuer, accessTTL)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		verifier = paseto.NewVerifier(keyProvider, tokenIssuer)
+
+	} else {
+		// ================================
+		// JWT (default)
+		// ================================
+		signingKey, err := loadSigningKey(secretSigningKey, dev)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		verifier = &token.MultiVerifier{
-			Verifier:    paseto.NewVerifier(jwtIssuer),
-			KeyProvider: keyProvider,
+		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "jwt-1", Alg: keys.HS256, Secret: signingKey})
+
+		cfg := jwt.Config{Issuer: tokenIssuer, Audience: tokenAudience, TTL: accessTTL}
+		if issuer, err = jwt.NewIssuer(keyProvider, cfg); err != nil {
+			return nil, nil, nil, err
 		}
-
-	} else {
-		// ================================
-		// JWT (fallback)
-		// ================================
-		signingKey := []byte(secretJWTSigningKey)
-
-		keyProvider = keys.NewMemoryProvider(keys.Key{
-			ID:  "jwt-1",
-			Key: signingKey,
-		})
-
-		issuer = jwt.NewIssuer(
-			keyProvider.ActiveKey().Key,
-			keyProvider.ActiveKey().ID,
-			jwtIssuer,
-			jwtAccessTTL,
-		)
-
-		verifier = &token.MultiVerifier{
-			Verifier:    jwt.NewVerifier(jwtIssuer),
-			KeyProvider: keyProvider,
+		if verifier, err = jwt.NewVerifier(keyProvider, cfg); err != nil {
+			return nil, nil, nil, err
 		}
-	}
-
-	if keyProvider == nil {
-		return nil, nil, nil, fmt.Errorf("no signing key configured")
 	}
 
 	// -------------------------------
@@ -279,6 +261,29 @@ func buildIAMService(
 	}
 
 	return iamService, userStore, keyProvider, nil
+}
+
+// loadSigningKey decodes IAM_SIGNING_KEY (standard base64, at least 32 bytes).
+// Without it the demo refuses to start, unless dev is set, in which case a
+// random key is generated (tokens then do not survive a restart).
+func loadSigningKey(b64Key string, dev bool) ([]byte, error) {
+	if b64Key == "" {
+		if !dev {
+			return nil, errors.New("IAM_SIGNING_KEY is not set (generate one with: openssl rand -base64 32), or run with -dev")
+		}
+		slog.Warn("IAM_SIGNING_KEY not set; using a random key (dev mode)")
+		key := make([]byte, keys.MinHMACKeySize)
+		_, _ = rand.Read(key)
+		return key, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(b64Key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid IAM_SIGNING_KEY: %w", err)
+	}
+	if len(key) < keys.MinHMACKeySize {
+		return nil, fmt.Errorf("IAM_SIGNING_KEY must decode to at least %d bytes", keys.MinHMACKeySize)
+	}
+	return key, nil
 }
 
 func getPort() string {

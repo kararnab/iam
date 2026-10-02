@@ -1,6 +1,9 @@
 package keys
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
 
 // MemoryProvider is an in-memory rotating key provider.
 //
@@ -45,13 +48,27 @@ func (p *MemoryProvider) VerificationKeys() []Key {
 
 // Rotate promotes a new key to active.
 //
-// Old active key is retained for verification.
-func (p *MemoryProvider) Rotate(newKey Key) {
+// Old active key is retained for verification. The new key ID must be
+// non-empty and must not match any key already held.
+func (p *MemoryProvider) Rotate(newKey Key) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if newKey.ID == "" {
+		return errors.New("keys: key ID is required")
+	}
+	if newKey.ID == p.active.ID {
+		return errors.New("keys: duplicate key ID")
+	}
+	for _, k := range p.old {
+		if k.ID == newKey.ID {
+			return errors.New("keys: duplicate key ID")
+		}
+	}
+
 	p.old = append([]Key{p.active}, p.old...)
 	p.active = newKey
+	return nil
 }
 
 // Prune removes old keys beyond retention count.
@@ -61,7 +78,7 @@ func (p *MemoryProvider) Prune(maxOld int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if len(p.old) > maxOld {
+	if maxOld >= 0 && len(p.old) > maxOld {
 		p.old = p.old[:maxOld]
 	}
 }

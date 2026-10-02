@@ -34,7 +34,8 @@ This version replaces the earlier Node.js implementation (See tag: `v1.0-nodejs`
 
 ```bash
 cd examples/demo
-go run .
+go run . -dev          # random signing key, for local development
+# or: IAM_SIGNING_KEY=$(openssl rand -base64 32) go run .
 ```
 
 The API listens on `:8080` (`PORT`). Prometheus metrics are served on

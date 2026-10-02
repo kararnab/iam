@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"net/http"
 
 	"github.com/kararnab/iam/token/keys"
@@ -16,35 +15,33 @@ func NewKeyRotationHandler(kp *keys.MemoryProvider) *KeyRotationHandler {
 	return &KeyRotationHandler{Keys: kp}
 }
 
+// Rotate generates a new signing key and makes it active. Tokens signed with
+// the previous key keep verifying until it is pruned.
+//
+// Key material is never returned over HTTP. In real systems keys come from a
+// KMS or Vault; this endpoint exists to demonstrate rotation.
 func (h *KeyRotationHandler) Rotate(w http.ResponseWriter, r *http.Request) {
-	// TODO:
-	//   - Enforce admin-only policy
-	//   - Audit event
-	//   - External KMS integration
-
-	newKey := make([]byte, 32)
-	if _, err := rand.Read(newKey); err != nil {
+	secret := make([]byte, keys.MinHMACKeySize)
+	if _, err := rand.Read(secret); err != nil {
 		http.Error(w, "failed to generate key", http.StatusInternalServerError)
 		return
 	}
 
 	prev := h.Keys.ActiveKey()
+	next := keys.Key{
+		ID:     "k-" + rand.Text()[:12],
+		Alg:    prev.Alg,
+		Secret: secret,
+	}
 
-	newKeyID := prev.ID + "-rotated" // TODO: better ID scheme
-
-	h.Keys.Rotate(keys.Key{
-		ID:  newKeyID,
-		Key: newKey,
-	})
+	if err := h.Keys.Rotate(next); err != nil {
+		http.Error(w, "rotation failed", http.StatusInternalServerError)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
-		"status":            "rotated",
-		"active_key_id":     newKeyID,
-		"previous_key_id":   prev.ID,
-		"active_key_base64": base64.StdEncoding.EncodeToString(newKey), // ⚠️ REMOVE IN PROD
+		"status":          "rotated",
+		"active_key_id":   next.ID,
+		"previous_key_id": prev.ID,
 	})
 }
-
-// ⚠️ Important
-// The base64 key is returned only for demo/debug.
-// In real systems, keys go to Vault/KMS, never over HTTP.
