@@ -1,6 +1,6 @@
 # Plan: turn `pkg/iam` into a reusable Go authentication library
 
-Status: **draft, waiting for approval**. No code has been changed yet.
+Status: **approved 2026-10-02** (all recommendations D1–D19 accepted).
 Branch: `feature/reusable-iam`.
 Date: 2026-10-02.
 
@@ -52,6 +52,10 @@ this and adds hashing.
 - Alternative B: put the library in a nested `iam/` module of this repository
   (`github.com/kararnab/AuthSystemDemo/iam`). Tags would have to be `iam/v0.1.0`, `iam/oidc/v0.1.0`.
 - You have to do the rename on GitHub yourself. I won't push anything.
+- **Timing (agreed):** the rename happens **last**, after P9. Until then the code already uses
+  `github.com/kararnab/iam`. This works locally and in CI because the modules point at each other
+  through `replace` directives. Only external `go get` and tags depend on the rename. Final order:
+  rename the repository, `git remote set-url origin git@github.com:kararnab/iam.git`, push, then tag.
 
 ### D2. Packages in the core module
 - **Recommendation:** the default service implementation moves into the root package as
