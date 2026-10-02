@@ -1,6 +1,8 @@
 # Plan: turn `pkg/iam` into a reusable Go authentication library
 
 Status: **approved 2026-10-02** (all recommendations D1–D19 accepted).
+**Implemented 2026-10-02**: phases P0–P9 are committed on `feature/reusable-iam`. Nothing is pushed or
+tagged. Remaining: rename the repository to `kararnab/iam` (D1, last), push, then tag (§7).
 Branch: `feature/reusable-iam`.
 Date: 2026-10-02.
 
@@ -404,3 +406,51 @@ These are not in v0.1. They go into SECURITY.md under "what this library does no
 - Linking accounts automatically by verified email.
 - Explicit deny rules in RBAC, policy versioning, ReBAC.
 - Cluster-wide key distribution (`MemoryProvider` is single-process; KMS or Vault integration comes later).
+
+---
+
+## 7. Implementation record
+
+| Phase | Commit subject |
+|---|---|
+| P0 | chore: stop tracking .env, add .env.example |
+| P1 | refactor: restructure into github.com/kararnab/iam module layout |
+| P2 | feat(token): stdlib JWT with pinned algorithm, kid lookup, iss/aud/leeway |
+| P3 | feat: canonical subjects, identity linking, argon2id password provider |
+| P4 | feat: hashed sessions with cookie and bearer modes, rotation and reuse detection |
+| P5 | feat(policy): deny by default, RBAC engine, AnyOf/AllOf composition |
+| P6 | feat: invite-only sign-up, login throttling, metrics.Recorder |
+| P7 | feat(httpauth): net/http middleware with cookie sessions, CSRF and RBAC |
+| P8 | feat: OIDC, PASETO v4, PostgreSQL and Redis sub-modules; store conformance suite |
+| P9 | docs: README, extension-point pages, SECURITY.md, CHANGELOG, OpenAPI |
+
+### Deviations from the approved plan
+
+- **`password.Provider`** lives in the `password` package instead of `provider/password`, so consumers
+  don't have to alias two packages named `password`.
+- **`policy.AnyOf` / `policy.AllOf`** replace the planned `Chain` (see D9).
+- **`Service.VerifyAccessToken`** returns `(*Subject, *SessionInfo, error)`, because bearer clients need
+  the session ID for "log out everywhere else". `RevokeAllSessions` returns the count.
+- **Login throttling is on by default** (in-memory limiters) instead of opt-in; it can be turned off
+  with `RateLimitConfig.Disabled`. This matches "secure by default".
+- **Added** `storetest`, a conformance suite that memstore, pgstore and redisstore all pass, and
+  `examples/quickstart`, the README's guide as a compiled program in the core module.
+- **Removed** the Hoppscotch collection; Hoppscotch and Postman import `openapi.yaml` directly.
+- The demo gained an optional `IAM_DATABASE_URL` (PostgreSQL stores), and its end-to-end tests also
+  run on PostgreSQL in CI.
+- `golang.org/x/sys` appears as an indirect dependency of the core module. It comes from
+  `golang.org/x/crypto/argon2` and is not imported directly.
+- **Integration tests** for pgstore and redisstore ran locally against throwaway `postgres:17-alpine`
+  and `redis:7-alpine` containers. In CI they run against service containers.
+
+### Release checklist (needs the owner)
+
+1. Rotate the secret that was committed in `.env` (`JWT_SECRET_KEY`).
+2. Rename the GitHub repository `kararnab/AuthSystemDemo` → `kararnab/iam`, then
+   `git remote set-url origin git@github.com:kararnab/iam.git`.
+3. Push `feature/reusable-iam` and open a PR; let CI run (including PostgreSQL and Redis).
+4. After merging, drop the `replace` directives from the sub-modules' `go.mod`, require
+   `github.com/kararnab/iam v0.1.0`, and tag in order: `v0.1.0` first, then `oidc/v0.1.0`,
+   `paseto/v0.1.0`, `pgstore/v0.1.0`, `redisstore/v0.1.0`, `prometheus/v0.1.0`. The demo keeps its
+   `replace` directives because it is never imported.
+5. Move the CHANGELOG's "Unreleased" section to `v0.1.0` with the release date.

@@ -1,202 +1,526 @@
 openapi: 3.0.3
 info:
-  title: Auth & Books API
-  version: 1.0.0
-  description: Authentication and Book management API
+  title: iam demo — books API
+  version: 0.1.0
+  description: |
+    Demo application for github.com/kararnab/iam.
 
+    Two ways to authenticate:
+
+    * **Cookie sessions** (browsers): `POST /api/session/login` sets an
+      HttpOnly `session` cookie (`__Host-session` over HTTPS) and returns a
+      `csrf_token`. Send it in the `X-CSRF-Token` header on every POST, PUT
+      and DELETE.
+    * **Bearer tokens** (API clients): `POST /api/login` returns an access
+      token (10 minutes) and a refresh token. `POST /api/refresh` rotates the
+      refresh token; reusing an old one revokes the session.
+
+    Sign-up is invite-only unless the server runs with `IAM_SIGNUP=open`.
+
+    Roles: `admin` (everything), `editor` (read and write books), `reader`
+    (read books).
 servers:
   - url: http://localhost:8080
 
+tags:
+  - name: bearer
+    description: Token-based authentication for API clients
+  - name: cookie
+    description: Cookie sessions for browsers
+  - name: account
+    description: Either authentication mode
+  - name: books
+  - name: admin
+
 components:
   securitySchemes:
-    BearerAuth:
+    bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Named `__Host-session` when served over HTTPS (not in -dev mode).
+
+  parameters:
+    CSRFToken:
+      name: X-CSRF-Token
+      in: header
+      required: false
+      description: Required for cookie-authenticated POST, PUT and DELETE requests.
+      schema: { type: string }
+    BookID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      example: "1"
+
+  headers:
+    RetryAfter:
+      description: Seconds until another login attempt is accepted.
+      schema: { type: integer }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Not allowed by policy, missing CSRF token, or a cross-origin request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooManyRequests:
+      description: Too many failed attempts
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, example: unauthorized }
+      required: [error]
+
     LoginRequest:
       type: object
       properties:
         provider:
           type: string
+          enum: [password, google]
           example: password
         params:
           type: object
-          additionalProperties: true
+          additionalProperties: { type: string }
+          description: |
+            `password`: `username`, `password`.
+            `google`: `id_token` (only when GOOGLE_OAUTH_CLIENTID is configured).
       required: [provider, params]
 
     RegisterRequest:
       type: object
       properties:
-        username:
-          type: string
-        password:
-          type: string
+        username: { type: string, example: alice@example.com }
+        password: { type: string, minLength: 12, example: alice-long-password }
+        invite: { type: string, description: Invite token (required unless sign-up is open) }
       required: [username, password]
 
     RefreshRequest:
       type: object
       properties:
-        refresh_token:
-          type: string
+        refresh_token: { type: string }
       required: [refresh_token]
+
+    Subject:
+      type: object
+      properties:
+        id: { type: string }
+        roles: { type: array, items: { type: string } }
+        attrs: { type: object, additionalProperties: { type: string } }
+      required: [id]
+
+    SessionInfo:
+      type: object
+      properties:
+        id: { type: string, description: Public session ID }
+        subject_id: { type: string }
+        mode: { type: string, enum: [cookie, bearer] }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        ip: { type: string }
+        user_agent: { type: string }
+        provider: { type: string }
+
+    SessionListItem:
+      allOf:
+        - $ref: '#/components/schemas/SessionInfo'
+        - type: object
+          properties:
+            current: { type: boolean }
+
+    BearerLoginResult:
+      type: object
+      properties:
+        mode: { type: string, enum: [bearer] }
+        access_token: { type: string }
+        refresh_token: { type: string }
+        subject: { $ref: '#/components/schemas/Subject' }
+        session: { $ref: '#/components/schemas/SessionInfo' }
+
+    CookieSession:
+      type: object
+      properties:
+        subject: { $ref: '#/components/schemas/Subject' }
+        session: { $ref: '#/components/schemas/SessionInfo' }
+        csrf_token: { type: string }
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    InviteRequest:
+      type: object
+      properties:
+        email: { type: string, description: Optional; binds the invite to this email }
+        roles:
+          type: array
+          items: { type: string, enum: [reader, editor] }
+          default: [reader]
+
+    Invite:
+      type: object
+      properties:
+        id: { type: string }
+        token: { type: string, description: Shown once; deliver it to the invitee }
+        expires_at: { type: string, format: date-time }
 
     Book:
       type: object
       properties:
-        id:
-          type: integer
-        title:
-          type: string
-        author:
-          type: string
-      required: [id, title, author]
+        id: { type: string, readOnly: true }
+        title: { type: string }
+        author: { type: string }
+      required: [title, author]
 
 paths:
-  /api/register:
-    post:
-      summary: Register a new user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RegisterRequest'
-            example:
-              username: alice
-              password: alice-long-password
-      responses:
-        '200':
-          description: User registered
-
+  # ---------------------------------------------------------------- bearer
   /api/login:
     post:
-      summary: Login (internal or external provider)
+      tags: [bearer]
+      summary: Log in and receive tokens
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-            examples:
-              internal-admin:
-                summary: Internal login (admin)
-                value:
-                  provider: password
-                  params:
-                    username: admin@gmail.com
-                    password: p@$$w0rd1
-              internal-user:
-                summary: Internal login (user)
-                value:
-                  provider: password
-                  params:
-                    username: alice
-                    password: alice-long-password
-              google-auth:
-                summary: Google login
-                value:
-                  provider: google
-                  params:
-                    id_token: "1234"
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { provider: password, params: { username: admin@gmail.com, password: p@$$w0rd1 } }
       responses:
         '200':
-          description: Login successful
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BearerLoginResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
 
-  /api/logout:
+  /api/register:
     post:
-      summary: Logout
+      tags: [bearer]
+      summary: Sign up and receive tokens
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshRequest'
-            example:
-              refresh_token: CxgvRcOzRgAYcFy6_y6zZtA1DtXdp1DM_4f4gtdFEs4
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
-        '200':
-          description: Logged out
+        '201':
+          description: Signed up
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BearerLoginResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Username taken }
 
   /api/refresh:
     post:
-      summary: Refresh access token
+      tags: [bearer]
+      summary: Rotate the refresh token and get a new access token
+      description: The old refresh token stops working. Presenting it again revokes the whole session.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/RefreshRequest'
-            example:
-              refresh_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
       responses:
         '200':
-          description: Token refreshed
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /api/books:
+  /api/logout:
     post:
-      security:
-        - BearerAuth: [ ]
-      summary: Create a book
+      tags: [bearer]
+      summary: End the session that owns a refresh token
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/Book'
-            example:
-              id: 2
-              title: Book B
-              author: FrankestienC
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { description: Logged out }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  # ---------------------------------------------------------------- cookie
+  /api/session/login:
+    post:
+      tags: [cookie]
+      summary: Log in with a session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Logged in; the session cookie is set
+          headers:
+            Set-Cookie: { schema: { type: string }, description: HttpOnly session cookie }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CookieSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/session/register:
+    post:
+      tags: [cookie]
+      summary: Sign up with a session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '201':
-          description: Book created
+          description: Signed up; the session cookie is set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CookieSession' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
-  /api/books/{id}:
-    put:
-      security:
-        - BearerAuth: [ ]
-      summary: Update book by ID
+  /api/session:
+    get:
+      tags: [cookie]
+      summary: Current session and a CSRF token
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CookieSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/session/logout:
+    post:
+      tags: [cookie]
+      summary: Log out and clear the cookie
+      security: [{ cookieAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      responses:
+        '200': { description: Logged out }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # --------------------------------------------------------------- account
+  /api/me:
+    get:
+      tags: [account]
+      summary: The authenticated subject
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Subject
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subject' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/sessions:
+    get:
+      tags: [account]
+      summary: List my active sessions
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SessionListItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/sessions/{id}:
+    delete:
+      tags: [account]
+      summary: Revoke one of my sessions
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-          example: 1
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/CSRFToken' }
+      responses:
+        '204': { description: Revoked }
+        '404': { description: No such session of mine }
+
+  /api/sessions/revoke-others:
+    post:
+      tags: [account]
+      summary: Log out everywhere else
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      responses:
+        '200':
+          description: Number of sessions revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: integer }
+
+  /api/identities:
+    post:
+      tags: [account]
+      summary: Link another identity (for example Google) to my account
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/Book'
-            example:
-              id: 2
-              title: Book B
-              author: Frankestien
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '204': { description: Linked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { description: The identity belongs to another account }
+
+  # ----------------------------------------------------------------- books
+  /api/books:
+    get:
+      tags: [books]
+      summary: List books (read on book)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
         '200':
-          description: Book updated
-    delete:
-      security:
-        - BearerAuth: []
-      summary: Delete book
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
+          description: Books
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Book' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [books]
+      summary: Create a book (write on book)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Book' }
+            example: { title: Book B, author: Mary Shelley }
       responses:
-        '204':
-          description: Book deleted
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/books/{id}:
+    get:
+      tags: [books]
+      summary: Get a book (read on book)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/BookID' }]
+      responses:
+        '200':
+          description: Book
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '404': { description: Not found }
+    put:
+      tags: [books]
+      summary: Update a book (write on book)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/BookID' }
+        - { $ref: '#/components/parameters/CSRFToken' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Book' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Book' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: Not found }
+    delete:
+      tags: [books]
+      summary: Delete a book (write on book)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/BookID' }
+        - { $ref: '#/components/parameters/CSRFToken' }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ----------------------------------------------------------------- admin
+  /api/invites:
+    post:
+      tags: [admin]
+      summary: Create an invite (create on invite — admins)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InviteRequest' }
+      responses:
+        '201':
+          description: Invite; the token is shown only once
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invite' }
+        '400': { description: Invites may grant reader or editor only }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /admin/keys/rotate:
     post:
-      security:
-        - BearerAuth: []
-      summary: Rotate signing keys (admin)
+      tags: [admin]
+      summary: Rotate the access-token signing key (rotate on signing_key — admins)
+      description: Tokens signed with the previous key keep verifying. Key material is never returned.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
       responses:
         '200':
-          description: Keys rotated
+          description: Rotated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: rotated }
+                  active_key_id: { type: string }
+                  previous_key_id: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }

@@ -277,3 +277,26 @@ func TestLoginRateLimit(t *testing.T) {
 		t.Fatalf("IP not throttled: %v", err)
 	}
 }
+
+func TestDefaultThrottling(t *testing.T) {
+	tests := []struct {
+		name      string
+		disabled  bool
+		throttled bool
+	}{
+		{"on by default", false, true},
+		{"explicitly disabled", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t, func(c *iam.Config) { c.RateLimit = iam.RateLimitConfig{Disabled: tt.disabled} })
+			for range 5 {
+				_, _ = f.svc.Login(ctx, pwLogin("admin@example.com", "wrong", ""))
+			}
+			_, err := f.svc.Login(ctx, pwLogin("admin@example.com", adminPW, ""))
+			if errors.Is(err, iam.ErrRateLimited) != tt.throttled {
+				t.Fatalf("err = %v, want throttled=%v", err, tt.throttled)
+			}
+		})
+	}
+}

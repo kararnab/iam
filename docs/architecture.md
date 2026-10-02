@@ -1,149 +1,120 @@
-# IAM (Identity & Access Management)
+# Architecture
 
-The `iam` package provides **authentication and authorization** infrastructure for the application.
+`iam` is a thin, modular layer between an application and its identity
+providers. It is **not** an identity provider like Keycloak, and it does not
+hold the application's user data model.
 
-It is not an identity provider like Google OAuth or Keycloak.
-Instead, it acts as a **thin, modular IAM layer** that:
-- integrates with one or more identity providers
-- issues and verifies access tokens
-- manages refresh-token–backed sessions
-- enforces authorization policies
-- emits audit events
+## Responsibilities
 
-The package is designed so it can later be:
-- extracted into a standalone microservice, or
-- replaced by a remote IAM service with minimal changes.
+IAM owns authentication and authorization infrastructure:
 
----
+- **Authentication:** delegates credential checks to pluggable providers and
+  maps the external identity to the application's canonical subject.
+- **Sessions:** server-side sessions in cookie or bearer mode, with hashed
+  secrets, refresh-token rotation and reuse detection, listing and
+  revocation.
+- **Access tokens:** short-lived, format-agnostic (JWT or PASETO), with
+  rotation-safe keys.
+- **Sign-up:** closed, invite-only or open.
+- **Authorization:** asks a policy engine; denies by default.
+- **Abuse resistance:** throttles failed logins per login and per IP.
+- **Audit and metrics:** emits events without deciding where they go.
 
-## What IAM is responsible for
+The application owns:
 
-IAM owns auth infrastructure, not application business logic.
+- users, roles and profile data (it implements `iam.UserStore`);
+- business rules and domain entities;
+- how sign-in is presented (pages, redirects, emails);
+- where logs and metrics end up.
 
-Specifically, it handles:
+## Shape
 
-- **Authentication** 
-  - Delegates credential validation to pluggable providers 
-  - Normalizes external identities into an internal Subject 
-- **Session management**
-  - Manages stateful refresh-token sessions 
-  - Supports session revocation and rotation
-  - Uses Redis-like storage abstractions
-- **Access tokens**
-  - Issues stateless access tokens (JWT / PASETO)
-  - Verifies tokens using rotation-safe key management 
-  - Hides token format from the rest of the app
-- **Authorization**
-  - Evaluates access decisions via a policy engine
-  - Supports RBAC/ABAC-style decisions (extensible)
-- **Audit logging**
-  - Emits security-relevant events (auth success/failure, refresh, revoke)
-  - Does not decide where logs are stored or sent
-
----
-
-## What IAM explicitly does NOT do
-
-IAM intentionally does not:
-- Persist application user data (users belong to the app)
-- Implement OAuth flows itself 
-- Contain HTTP handlers or transport logic 
-- Store business-domain entities 
-- Decide logging backends or observability tooling
-
-These concerns live outside IAM.
-
----
-
-## High-level architecture
-
-```java
+```
 Application
-   |
-   v
-IAM Service (iam.Service)
-   |
-   +-- Providers        (Google, Keycloak, Internal, etc.)
-   +-- Session Manager  (refresh tokens, stateful)
-   +-- Token Issuer     (JWT / PASETO)
-   +-- Token Verifier   (rotation-safe)
-   +-- Policy Engine    (authorization decisions)
-   +-- Audit Logger     (security events)
+   │  (plain data in, plain data out)
+   ▼
+iam.Service ──────────────── implemented by iam.New (in-process),
+   │                           or later by a remote client
+   ├── provider.AuthProvider   password, oidc, yours
+   ├── iam.UserStore           subjects + identities (application-owned)
+   ├── session.Manager         over a session.Store
+   ├── token.Issuer/Verifier   jwt, paseto, yours (keys.Provider)
+   ├── policy.Engine           RBAC, AnyOf/AllOf, yours
+   ├── invite.Store            sign-up invites
+   ├── ratelimit.Limiter       failed-login throttling
+   ├── audit.Logger            security events
+   └── metrics.Recorder        counters
 
+httpauth.Middleware ── net/http adapter that depends ONLY on iam.Service
 ```
 
-The application depends only on the `iam.Service` interface.
-
-## Folder Structure
-
-```graphql
-iam/
-├── auth.go          # Public IAM interface (Authenticate, Refresh, Verify, Revoke)
-├── service/         # Default IAM service implementation
-├── provider/        # Identity provider adapters (Google, internal, etc.)
-├── session/         # Refresh-token session management (stateful)
-├── token/           # Access token infrastructure (JWT / PASETO, key rotation)
-├── policy/          # Authorization engine (RBAC/ABAC)
-└── audit/           # Audit event contracts
+## Package layout
 
 ```
+github.com/kararnab/iam            Service, Config, New, Subject, store contracts
+├── provider/                      AuthProvider, Identity, Registrar
+├── password/                      argon2id/bcrypt Hasher, Policy, password Provider
+├── session/                       Session, Store, Manager (rotation, reuse detection)
+├── token/                         Issuer, Verifier, Claims
+│   ├── jwt/                       stdlib JWS: HS256, EdDSA
+│   └── keys/                      Key, Provider, MemoryProvider
+├── policy/                        Engine, RBAC, Func, AnyOf, AllOf, DenyAll
+├── invite/                        Invite, Store, Policy
+├── ratelimit/                     Limiter, LockoutHooks, Memory
+├── audit/                         Logger, Event, SlogLogger, Multi
+├── metrics/                       Recorder, Noop
+├── httpauth/                      net/http middleware, cookies, CSRF
+├── memstore/                      in-memory reference stores
+├── storetest/                     store conformance suite
+├── examples/quickstart/           the README's five-minute guide
+│
+├── oidc/        (module)          OpenID Connect and Google
+├── paseto/      (module)          PASETO v4 tokens
+├── pgstore/     (module)          PostgreSQL stores + migrations
+├── redisstore/  (module)          Redis sessions + limiter
+├── prometheus/  (module)          Prometheus recorder
+└── examples/demo/ (module)        demo app, imports everything like a consumer
+```
 
-Each subpackage has a single responsibility and can be replaced independently.
+## Design principles
 
----
+- **Provider-agnostic.** IAM does not care how someone authenticated, only
+  that a provider vouched for a stable identity.
+- **Token-format agnostic.** JWT, PASETO or opaque tokens can be swapped
+  without touching application code.
+- **No business logic.** Roles mean nothing to IAM; the policy engine
+  interprets them.
+- **No HTTP inside the core service.** `iam.Service` takes and returns plain
+  data. HTTP lives in `httpauth`, which depends only on the interface.
+- **Replaceable as a remote service.** Because of the two points above, a
+  gRPC or HTTP client can implement `iam.Service` without changes to
+  callers.
+- **Small dependency surface.** The core module uses the standard library
+  and `golang.org/x/crypto` only. Everything else is an opt-in module.
+- **Secure by default.** Deny by default, hashed secrets, rotation with
+  reuse detection, pinned algorithms, CSRF protection, throttling. See
+  [SECURITY.md](../SECURITY.md).
 
-## Key design principles
+## Flows
 
-- Provider-agnostic
-    IAM does not care how a user authenticated—only that they did.
+**Login.** `Service.Login` → rate-limit check → `provider.Authenticate` →
+`IdentityStore.ResolveIdentity` → `SubjectLoader.LoadSubject` (rejects
+disabled subjects) → `session.Manager.Create` → in bearer mode,
+`token.Issuer.Issue` → audit `login_success`.
 
-- Token-format agnostic
-    JWT, PASETO, or opaque tokens can be swapped without touching application code.
+**Cookie request.** `httpauth.Protect` → cross-origin check → read the
+cookie → `Service.ValidateSession` (loads the subject, so role changes apply
+immediately) → CSRF token check for unsafe methods → handler →
+`RequirePermission` → `Service.Authorize` → `policy.Engine`.
 
-- Separation of concerns
-    Auth, sessions, tokens, policies, and audit logging are isolated.
+**Bearer request.** `httpauth.Protect` → `Service.VerifyAccessToken`
+(stateless, or session-checked with `VerifySessionOnAccess`) → handler.
 
-- Security by default
+**Refresh.** `Service.Refresh` → `session.Manager.Refresh` (atomic rotation;
+a reused token revokes the session) → reload the subject → issue a new
+access token.
 
-    - Short-lived access tokens 
-    - Stateful refresh tokens 
-    - Key rotation support 
-    - Centralized audit emission
-
-- Microservice-ready
-    - IAM is accessed via an interface 
-    - Can be wrapped with HTTP/gRPC or replaced with a remote client
-
-#### Note:
-Tomorrow you can
-`git subtree split pkg/iam → iam-service`
-You won’t be rewriting logic — only wiring.
-
----
-
-## Authentication and Authorization flows
-
-### Typical authentication flow: 
-1. Application calls iam.Service.Authenticate 
-2. IAM delegates to the configured provider 
-3. External identity is mapped to an internal Subject 
-4. A refresh-token session is created 
-5. An access token is issued 
-6. Audit events are emitted
-
-### Typical request authorization flow:
-1. HTTP middleware extracts access token 
-2. IAM verifies token and returns `Subject`
-3. Policy engine evaluates access 
-4. Application handler executes or rejects
-
----
-
-## Summary
-
-The `iam` package is auth support infrastructure:
-- not a user database 
-- not a UI 
-- not a business layer
-
-It provides a **secure, extensible foundation** for authentication and authorization while keeping the rest of the application clean and independent of auth details.
+**Sign-up.** `Service.SignUp` → check the invite → register or authenticate
+the identity → consume the invite atomically → `CreateSubject` +
+`LinkIdentity` → start a session. Any failure after registration rolls the
+registration back.

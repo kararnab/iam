@@ -67,8 +67,17 @@ type SignupConfig struct {
 	InviteTTL time.Duration
 }
 
-// RateLimitConfig throttles failed logins. Nil limiters disable that check.
+// RateLimitConfig throttles failed logins.
+//
+// When both limiters are nil and Disabled is false, in-memory limiters are
+// used: 5 failures per login and 100 per IP within 15 minutes, then a
+// growing back-off. With several instances, use a shared limiter such as
+// redisstore.Limiter.
 type RateLimitConfig struct {
+	// Disabled turns throttling off. Only for tests or when an upstream
+	// component already throttles logins.
+	Disabled bool
+
 	// PerLogin counts failures per provider and login name
 	// (key "login:<provider>:<login>").
 	PerLogin ratelimit.Limiter
@@ -185,6 +194,19 @@ func (c *Config) validate() error {
 	}
 	if c.Signup.InviteTTL < 0 || c.Signup.InviteTTL > 90*24*time.Hour {
 		return errors.New("iam: Signup.InviteTTL must be between 0 and 90 days")
+	}
+
+	if !c.RateLimit.Disabled && c.RateLimit.PerLogin == nil && c.RateLimit.PerIP == nil {
+		var err error
+		if c.RateLimit.PerLogin, err = ratelimit.NewMemory(ratelimit.Config{Threshold: 5}); err != nil {
+			return err
+		}
+		if c.RateLimit.PerIP, err = ratelimit.NewMemory(ratelimit.Config{Threshold: 100}); err != nil {
+			return err
+		}
+	}
+	if c.RateLimit.Disabled {
+		c.RateLimit.PerLogin, c.RateLimit.PerIP = nil, nil
 	}
 
 	if c.Audit == nil {
