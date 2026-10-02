@@ -10,12 +10,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/httpauth"
-	"github.com/kararnab/iam/memstore"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/policy"
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/httpauth"
+	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/policy"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 func main() {

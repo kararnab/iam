@@ -4,7 +4,7 @@ package prometheus
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/kararnab/iam/metrics"
+	"github.com/kararnab/iam/v2/metrics"
 )
 
 const (

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/kararnab/iam/examples/demo/internal/secrets"
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 // Demo-only admin credentials, used with -dev when IAM_ADMIN_EMAIL is unset.

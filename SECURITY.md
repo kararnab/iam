@@ -7,7 +7,7 @@ Report a vulnerability** (private security advisories) on this repository.
 Don't open public issues for them. Include a description, affected
 versions, and a reproduction if you have one.
 
-Only the latest `v0.x` release receives fixes until v1.0.0.
+Security fixes go into the latest v2 release.
 
 ## Threat model
 

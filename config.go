@@ -6,14 +6,14 @@ import (
 	"slices"
 	"time"
 
-	"github.com/kararnab/iam/audit"
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/metrics"
-	"github.com/kararnab/iam/policy"
-	"github.com/kararnab/iam/provider"
-	"github.com/kararnab/iam/ratelimit"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/token"
+	"github.com/kararnab/iam/v2/audit"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/metrics"
+	"github.com/kararnab/iam/v2/policy"
+	"github.com/kararnab/iam/v2/provider"
+	"github.com/kararnab/iam/v2/ratelimit"
+	"github.com/kararnab/iam/v2/session"
+	"github.com/kararnab/iam/v2/token"
 )
 
 var (

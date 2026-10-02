@@ -1,3 +1,9 @@
+// Package policy decides authorization: may this subject perform this
+// action on this resource?
+//
+// Engines deny by default. RBAC maps roles to permissions on resource
+// types; Func adapts your own rules (ownership, tenancy, attributes); AnyOf
+// and AllOf compose engines and fail closed on errors.
 package policy
 
 import (

@@ -4,11 +4,11 @@ go 1.26.0
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/kararnab/iam v0.0.0
-	github.com/kararnab/iam/oidc v0.0.0
-	github.com/kararnab/iam/paseto v0.0.0
-	github.com/kararnab/iam/pgstore v0.0.0-00010101000000-000000000000
-	github.com/kararnab/iam/prometheus v0.0.0
+	github.com/kararnab/iam/oidc/v2 v2.0.0
+	github.com/kararnab/iam/paseto/v2 v2.0.0
+	github.com/kararnab/iam/pgstore/v2 v2.0.0
+	github.com/kararnab/iam/prometheus/v2 v2.0.0
+	github.com/kararnab/iam/v2 v2.0.0
 	github.com/prometheus/client_golang v1.24.1
 	golang.org/x/crypto v0.57.0
 )
@@ -37,9 +37,9 @@ require (
 )
 
 replace (
-	github.com/kararnab/iam => ../../
-	github.com/kararnab/iam/oidc => ../../oidc
-	github.com/kararnab/iam/paseto => ../../paseto
-	github.com/kararnab/iam/pgstore => ../../pgstore
-	github.com/kararnab/iam/prometheus => ../../prometheus
+	github.com/kararnab/iam/oidc/v2 => ../../oidc
+	github.com/kararnab/iam/paseto/v2 => ../../paseto
+	github.com/kararnab/iam/pgstore/v2 => ../../pgstore
+	github.com/kararnab/iam/prometheus/v2 => ../../prometheus
+	github.com/kararnab/iam/v2 => ../../
 )

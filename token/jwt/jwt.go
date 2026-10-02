@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kararnab/iam/token"
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2/token"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 const (

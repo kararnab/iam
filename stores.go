@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 var (

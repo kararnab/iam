@@ -16,7 +16,7 @@ Users are **application-owned**. If you already have a users table,
 implement `iam.UserStore` over it and use IAM's stores only for sessions and
 invites.
 
-## PostgreSQL (`github.com/kararnab/iam/pgstore`)
+## PostgreSQL (`github.com/kararnab/iam/pgstore/v2`)
 
 ```go
 pool, _ := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
@@ -39,7 +39,7 @@ cfg := iam.Config{
 - Run `(*pgstore.Sessions).PurgeExpired` periodically. Expired sessions are
   rejected anyway; this only reclaims space.
 
-## Redis (`github.com/kararnab/iam/redisstore`)
+## Redis (`github.com/kararnab/iam/redisstore/v2`)
 
 ```go
 rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})

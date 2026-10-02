@@ -13,7 +13,7 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 // fakeIssuer serves discovery and JWKS and signs ID tokens.

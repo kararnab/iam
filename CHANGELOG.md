@@ -2,21 +2,23 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[Semantic Versioning](https://semver.org/). Before v1.0.0, minor versions may
-contain breaking changes.
+[Semantic Versioning](https://semver.org/).
 
-Each module is tagged separately: `v0.1.0` for the core module, and
-`oidc/v0.1.0`, `paseto/v0.1.0`, `pgstore/v0.1.0`, `redisstore/v0.1.0` and
-`prometheus/v0.1.0` for the sub-modules.
+Each module is tagged separately and the versions move together: `v2.0.0`
+for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
+`redisstore/v2.0.0` and `prometheus/v2.0.0` for the sub-modules.
 
-## [Unreleased] — planned as v0.1.0
+## [2.0.0] — 2026-10-02
 
 First release as a reusable library, extracted from the AuthSystemDemo
-application (`github.com/kararnab/authdemo/pkg/iam`).
+application (`github.com/kararnab/authdemo/pkg/iam`). Numbering starts at 2
+because the repository's earlier tags (`v1.0-nodejs`, `v1.1-golang`) belong
+to the demo application. Module paths therefore end in `/v2`, as Go
+requires for major versions above 1.
 
 ### Added
 
-- Importable module `github.com/kararnab/iam` whose only dependency is
+- Importable module `github.com/kararnab/iam/v2` whose only dependency is
   `golang.org/x/crypto`. Optional modules: `oidc`, `paseto`, `pgstore`,
   `redisstore`, `prometheus`.
 - Two session modes: HttpOnly cookie sessions (default) and bearer access
@@ -62,7 +64,8 @@ application (`github.com/kararnab/authdemo/pkg/iam`).
 ### Changed (breaking, relative to `authdemo/pkg/iam`)
 
 - Module path `github.com/kararnab/authdemo/pkg/iam/...` became
-  `github.com/kararnab/iam/...`.
+  `github.com/kararnab/iam/v2/...`, and sub-modules
+  `github.com/kararnab/iam/<module>/v2`.
 - `service.New(service.Options)` became `iam.New(iam.Config)`; the `service`
   package is gone.
 - `iam.Service`: `Authenticate` became `Login` (returns `LoginResult`),
@@ -122,3 +125,5 @@ application (`github.com/kararnab/authdemo/pkg/iam`).
   admin password unless started with `-dev`. **Rotate any secret that was
   ever committed**: `.env` (`JWT_SECRET_KEY`) was tracked in git history
   before this release.
+
+[2.0.0]: https://github.com/kararnab/iam/releases/tag/v2.0.0

@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/storetest"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/session"
+	"github.com/kararnab/iam/v2/storetest"
 )
 
 // newPool connects to IAM_TEST_POSTGRES_DSN and resets the iam tables.

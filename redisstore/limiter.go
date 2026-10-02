@@ -7,7 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/kararnab/iam/ratelimit"
+	"github.com/kararnab/iam/v2/ratelimit"
 )
 
 // Limiter implements ratelimit.Limiter on Redis, so throttling is shared by

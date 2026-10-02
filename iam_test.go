@@ -8,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/audit"
-	"github.com/kararnab/iam/memstore"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/policy"
-	"github.com/kararnab/iam/provider"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/token"
-	"github.com/kararnab/iam/token/jwt"
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/audit"
+	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/policy"
+	"github.com/kararnab/iam/v2/provider"
+	"github.com/kararnab/iam/v2/session"
+	"github.com/kararnab/iam/v2/token"
+	"github.com/kararnab/iam/v2/token/jwt"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 var ctx = context.Background()

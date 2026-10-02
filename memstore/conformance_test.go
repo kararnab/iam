@@ -3,10 +3,10 @@ package memstore_test
 import (
 	"testing"
 
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/memstore"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/storetest"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/session"
+	"github.com/kararnab/iam/v2/storetest"
 )
 
 func TestConformance(t *testing.T) {

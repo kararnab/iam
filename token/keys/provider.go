@@ -1,3 +1,9 @@
+// Package keys holds signing and encryption keys for access tokens.
+//
+// Every Key is pinned to one algorithm. A Provider exposes the active key
+// (read on every issue, so rotation is immediate) and the keys still
+// accepted for verification. MemoryProvider is an in-process
+// implementation; back Provider with a KMS or Vault for multiple instances.
 package keys
 
 import (

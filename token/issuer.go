@@ -1,3 +1,8 @@
+// Package token defines access-token issuing and verification independent
+// of the token format.
+//
+// Implementations: package jwt (HS256, EdDSA; standard library only) and
+// the paseto module (PASETO v4). Verification errors wrap ErrInvalidToken.
 package token
 
 import (

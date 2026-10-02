@@ -4,7 +4,7 @@ import (
 	"crypto/rand"
 	"net/http"
 
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 type KeyRotationHandler struct {

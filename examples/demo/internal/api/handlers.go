@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/httpauth"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/httpauth"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/session"
 )
 
 // Handlers exposes authentication endpoints in two flavours:

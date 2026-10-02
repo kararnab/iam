@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/audit"
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/memstore"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/ratelimit"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/audit"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/ratelimit"
+	"github.com/kararnab/iam/v2/session"
 )
 
 func withInvites(c *iam.Config) {

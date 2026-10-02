@@ -1,3 +1,10 @@
+// Package provider defines identity providers: components that verify
+// credentials (a password, an OIDC ID token) and return a stable external
+// Identity.
+//
+// Providers never create sessions, issue tokens or assign roles. IAM maps
+// identities to the application's subjects. Built-in providers live in
+// package password and in the oidc module.
 package provider
 
 import (

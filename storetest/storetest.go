@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/provider"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/provider"
+	"github.com/kararnab/iam/v2/session"
 )
 
 var ctx = context.Background()

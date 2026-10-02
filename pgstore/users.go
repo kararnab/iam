@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 // Users implements iam.UserStore and password.CredentialStore.
