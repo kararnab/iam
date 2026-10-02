@@ -34,6 +34,7 @@ func NewRouter(
 	mux.Handle("DELETE /api/books/{id}", can(ActionWrite, ResourceBook, books.Delete))
 
 	// Admin
+	mux.Handle("POST /api/invites", can(ActionCreate, ResourceInvite, auth.CreateInvite))
 	mux.Handle("POST /admin/keys/rotate", can(ActionRotate, ResourceSigningKey, keyRotationHandler.Rotate))
 
 	return mux

@@ -11,9 +11,11 @@ const (
 	ActionRead   policy.Action = "read"
 	ActionWrite  policy.Action = "write"
 	ActionRotate policy.Action = "rotate"
+	ActionCreate policy.Action = "create"
 
 	ResourceBook       = "book"
 	ResourceSigningKey = "signing_key"
+	ResourceInvite     = "invite"
 )
 
 // NewPolicy returns the demo's RBAC policy. Anything not listed is denied.

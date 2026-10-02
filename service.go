@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/kararnab/iam/audit"
+	"github.com/kararnab/iam/metrics"
 	"github.com/kararnab/iam/policy"
 	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/ratelimit"
 	"github.com/kararnab/iam/session"
 	"github.com/kararnab/iam/token"
 )
@@ -49,7 +52,7 @@ func (s *service) audit(ctx context.Context, e audit.Event) {
 
 func (s *service) Login(ctx context.Context, req AuthRequest) (*LoginResult, error) {
 	fail := func(subjectID, reason string, err error) (*LoginResult, error) {
-		s.cfg.Metrics.AuthFailure()
+		s.cfg.Metrics.Inc(metrics.LoginFailure)
 		s.audit(ctx, audit.Event{
 			Type:      audit.EventLoginFailure,
 			SubjectID: subjectID,
@@ -69,14 +72,16 @@ func (s *service) Login(ctx context.Context, req AuthRequest) (*LoginResult, err
 		return fail("", "mode_not_allowed", ErrModeNotAllowed)
 	}
 
-	prov, ok := s.providers[req.Provider]
-	if !ok {
-		return fail("", "unknown_provider", ErrUnknownProvider)
-	}
-
-	identity, err := prov.Authenticate(ctx, req.Params)
+	identity, err := s.authenticate(ctx, req)
 	if err != nil {
-		return fail("", "invalid_credentials", err)
+		reason := "invalid_credentials"
+		switch {
+		case errors.Is(err, ErrUnknownProvider):
+			reason = "unknown_provider"
+		case errors.Is(err, ErrRateLimited):
+			reason = "rate_limited"
+		}
+		return fail("", reason, err)
 	}
 
 	subjectID, err := s.cfg.Users.ResolveIdentity(ctx, identity.Provider, identity.ProviderID)
@@ -96,7 +101,7 @@ func (s *service) Login(ctx context.Context, req AuthRequest) (*LoginResult, err
 		return fail(subject.ID, "session_error", err)
 	}
 
-	s.cfg.Metrics.AuthSuccess()
+	s.cfg.Metrics.Inc(metrics.LoginSuccess)
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventLoginSuccess,
 		SubjectID: subject.ID,
@@ -155,7 +160,7 @@ func (s *service) startSession(ctx context.Context, subject *Subject, mode sessi
 
 func (s *service) Refresh(ctx context.Context, refreshToken string, client ClientInfo) (*TokenPair, error) {
 	fail := func(sess *session.Session, typ audit.EventType, reason string, err error) (*TokenPair, error) {
-		s.cfg.Metrics.TokenRefreshFailure()
+		s.cfg.Metrics.Inc(metrics.RefreshFailure)
 		e := audit.Event{Type: typ, ClientIP: client.IP, Message: "refresh failed", Attrs: map[string]string{"reason": reason}}
 		if sess != nil {
 			e.SubjectID, e.SessionID = sess.SubjectID, sess.ID
@@ -170,6 +175,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, client Clien
 	sess, newRefresh, err := s.sessions.Refresh(ctx, refreshToken)
 	switch {
 	case errors.Is(err, session.ErrReused):
+		s.cfg.Metrics.Inc(metrics.RefreshReuse)
 		return fail(sess, audit.EventRefreshReuse, "reuse", err)
 	case errors.Is(err, session.ErrRaced):
 		return fail(sess, audit.EventRefreshFailure, "raced", err)
@@ -190,7 +196,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, client Clien
 		return fail(sess, audit.EventRefreshFailure, "issue_error", err)
 	}
 
-	s.cfg.Metrics.TokenRefreshSuccess()
+	s.cfg.Metrics.Inc(metrics.RefreshSuccess)
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventRefreshSuccess,
 		SubjectID: subject.ID,
@@ -207,7 +213,7 @@ func (s *service) VerifyAccessToken(ctx context.Context, accessToken string) (*S
 	}
 	claims, err := s.cfg.TokenVerifier.Verify(ctx, accessToken)
 	if err != nil {
-		s.cfg.Metrics.TokenVerifyFailure()
+		s.cfg.Metrics.Inc(metrics.TokenVerifyFailure)
 		s.audit(ctx, audit.Event{
 			Type:    audit.EventTokenVerifyFailure,
 			Message: "access token verification failed",
@@ -219,13 +225,13 @@ func (s *service) VerifyAccessToken(ctx context.Context, accessToken string) (*S
 	if s.cfg.VerifySessionOnAccess {
 		sess, err := s.sessions.Get(ctx, claims.SessionID)
 		if err != nil || sess.SubjectID != claims.SubjectID || sess.Mode != session.ModeBearer {
-			s.cfg.Metrics.TokenVerifyFailure()
+			s.cfg.Metrics.Inc(metrics.TokenVerifyFailure)
 			return nil, nil, ErrInvalidSession
 		}
 		*info = infoFor(sess)
 	}
 
-	s.cfg.Metrics.TokenVerifySuccess()
+	s.cfg.Metrics.Inc(metrics.TokenVerifySuccess)
 	return &Subject{ID: claims.SubjectID, Roles: claims.Roles, Attrs: claims.Attrs}, info, nil
 }
 
@@ -273,13 +279,12 @@ func (s *service) RotateSession(ctx context.Context, sessionToken string) (*Logi
 func (s *service) Logout(ctx context.Context, tok string) error {
 	sess, err := s.sessions.Revoke(ctx, tok)
 	if err != nil {
-		s.cfg.Metrics.SessionRevokeFailure()
 		return err
 	}
 	if sess == nil {
 		return nil
 	}
-	s.cfg.Metrics.SessionRevokeSuccess()
+	s.cfg.Metrics.Inc(metrics.Logout)
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventLogout,
 		SubjectID: sess.SubjectID,
@@ -308,7 +313,7 @@ func (s *service) RevokeSession(ctx context.Context, subjectID, sessionID string
 		}
 		return err
 	}
-	s.cfg.Metrics.SessionRevokeSuccess()
+	s.cfg.Metrics.Inc(metrics.SessionRevoked)
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventSessionRevoked,
 		SubjectID: subjectID,
@@ -345,7 +350,7 @@ func (s *service) Authorize(
 ) (*policy.Decision, error) {
 
 	deny := func(subjectID, reason string, err error) (*policy.Decision, error) {
-		s.cfg.Metrics.PolicyDenied()
+		s.cfg.Metrics.Inc(metrics.PolicyDenied)
 		s.audit(ctx, audit.Event{
 			Type:      audit.EventPolicyDenied,
 			SubjectID: subjectID,
@@ -387,11 +392,7 @@ func (s *service) LinkIdentity(ctx context.Context, subjectID string, req AuthRe
 		return err
 	}
 
-	prov, ok := s.providers[req.Provider]
-	if !ok {
-		return ErrUnknownProvider
-	}
-	identity, err := prov.Authenticate(ctx, req.Params)
+	identity, err := s.authenticate(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -426,6 +427,102 @@ func (s *service) LinkIdentity(ctx context.Context, subjectID string, req AuthRe
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// authenticate runs a provider behind the failed-login rate limits.
+//
+// Throttled attempts never reach the provider (no password hashing). Only
+// credential failures count; unknown and known logins count the same, so
+// throttling reveals nothing about which logins exist.
+func (s *service) authenticate(ctx context.Context, req AuthRequest) (*provider.Identity, error) {
+	prov, ok := s.providers[req.Provider]
+	if !ok {
+		return nil, ErrUnknownProvider
+	}
+
+	keys := s.limitKeys(req)
+	for _, k := range keys {
+		r, err := k.limiter.Check(ctx, k.key)
+		if err != nil {
+			return nil, err
+		}
+		if !r.Allowed {
+			s.cfg.Metrics.Inc(metrics.RateLimited)
+			s.audit(ctx, audit.Event{
+				Type:     audit.EventRateLimited,
+				Provider: req.Provider,
+				ClientIP: req.Client.IP,
+				Message:  "attempt throttled",
+				Attrs:    map[string]string{"scope": k.scope},
+			})
+			return nil, &RateLimitError{RetryAfter: r.RetryAfter}
+		}
+	}
+
+	identity, err := prov.Authenticate(ctx, req.Params)
+	if errors.Is(err, provider.ErrInvalidCredentials) {
+		for _, k := range keys {
+			s.recordFailure(ctx, req, k)
+		}
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	for _, k := range keys {
+		if k.scope == "login" {
+			_ = k.limiter.Reset(ctx, k.key)
+		}
+	}
+	return identity, nil
+}
+
+type limitKey struct {
+	limiter ratelimit.Limiter
+	scope   string // "login" or "ip"; never contains the login itself
+	key     string
+}
+
+func (s *service) limitKeys(req AuthRequest) []limitKey {
+	var keys []limitKey
+	if l := s.cfg.RateLimit.PerLogin; l != nil {
+		if login := strings.ToLower(strings.TrimSpace(req.Params["username"])); login != "" {
+			keys = append(keys, limitKey{l, "login", "login:" + req.Provider + ":" + login})
+		}
+	}
+	if l := s.cfg.RateLimit.PerIP; l != nil && req.Client.IP != "" {
+		keys = append(keys, limitKey{l, "ip", "ip:" + req.Client.IP})
+	}
+	return keys
+}
+
+func (s *service) recordFailure(ctx context.Context, req AuthRequest, k limitKey) {
+	before, _ := k.limiter.Check(ctx, k.key)
+	r, err := k.limiter.Fail(ctx, k.key)
+	if err != nil {
+		return
+	}
+	hooks := s.cfg.RateLimit.Hooks
+	if hooks != nil {
+		hooks.OnFailure(ctx, k.key, r)
+	}
+	if before.Allowed && !r.Allowed {
+		if hooks != nil {
+			hooks.OnBlocked(ctx, k.key, r)
+		}
+		s.audit(ctx, audit.Event{
+			Type:     audit.EventLockout,
+			Provider: req.Provider,
+			ClientIP: req.Client.IP,
+			Message:  "too many failures; throttling",
+			Attrs: map[string]string{
+				"scope":       k.scope,
+				"failures":    strconv.Itoa(r.Failures),
+				"retry_after": r.RetryAfter.String(),
+			},
+		})
+	}
+}
 
 // loadActiveSubject loads a subject and rejects disabled ones.
 func (s *service) loadActiveSubject(ctx context.Context, subjectID string) (*Subject, error) {

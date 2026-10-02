@@ -19,11 +19,13 @@ import (
 	"github.com/kararnab/iam/examples/demo/internal/secrets"
 
 	"github.com/kararnab/iam"
+	"github.com/kararnab/iam/invite"
 	"github.com/kararnab/iam/memstore"
 	googleprov "github.com/kararnab/iam/oidc/google"
 	"github.com/kararnab/iam/paseto"
 	"github.com/kararnab/iam/password"
 	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/ratelimit"
 	"github.com/kararnab/iam/session"
 	"github.com/kararnab/iam/token"
 	"github.com/kararnab/iam/token/jwt"
@@ -67,7 +69,11 @@ func main() {
 	// Metrics
 	// -------------------------------
 	registry := prom.NewRegistry()
-	iamMetrics := prom.NewIAMMetrics(registry)
+	iamMetrics, err := prom.NewRecorder(registry)
+	if err != nil {
+		slog.Error("failed to register metrics", "error", err)
+		os.Exit(1)
+	}
 
 	// -------------------------------
 	// IAM + infra wiring
@@ -81,7 +87,7 @@ func main() {
 	// -------------------------------
 	// HTTP API
 	// -------------------------------
-	authHandlers := api.NewHandlers(deps.iam, deps.users, deps.passwords)
+	authHandlers := api.NewHandlers(deps.iam)
 	bookStore := books.NewMemoryStore()
 	bookHandlers := api.NewBookHandlers(bookStore)
 	keyRotationHandler := api.NewKeyRotationHandler(deps.keys)
@@ -142,7 +148,7 @@ type demoDeps struct {
 }
 
 func buildIAMService(
-	iamMetrics metrics.IAMMetrics,
+	iamMetrics metrics.Recorder,
 	dev bool,
 ) (*demoDeps, error) {
 
@@ -246,6 +252,16 @@ func buildIAMService(
 	if err != nil {
 		return nil, err
 	}
+
+	perLogin, err := ratelimit.NewMemory(ratelimit.Config{Threshold: 5})
+	if err != nil {
+		return nil, err
+	}
+	perIP, err := ratelimit.NewMemory(ratelimit.Config{Threshold: 50})
+	if err != nil {
+		return nil, err
+	}
+	rateLimits := iam.RateLimitConfig{PerLogin: perLogin, PerIP: perIP}
 	iamService, err := iam.New(iam.Config{
 		Providers: providers,
 		Users:     userStore,
@@ -255,6 +271,8 @@ func buildIAMService(
 		TokenIssuer:   issuer,
 		TokenVerifier: verifier,
 		Policy:        rbac,
+		Signup:        signupConfig(),
+		RateLimit:     rateLimits,
 		Audit:         audit.NewSlogLogger(nil),
 		Metrics:       iamMetrics,
 	})
@@ -263,6 +281,15 @@ func buildIAMService(
 	}
 
 	return &demoDeps{iam: iamService, users: userStore, passwords: passwordProvider, keys: keyProvider}, nil
+}
+
+// signupConfig is invite-only by default; IAM_SIGNUP=open switches to open
+// sign-up with the reader role.
+func signupConfig() iam.SignupConfig {
+	if os.Getenv("IAM_SIGNUP") == "open" {
+		return iam.SignupConfig{Policy: invite.Open, DefaultRoles: []string{api.RoleReader}}
+	}
+	return iam.SignupConfig{Policy: invite.InviteOnly, Invites: memstore.NewInvites()}
 }
 
 // loadSigningKey decodes IAM_SIGNING_KEY (standard base64, at least 32 bytes).

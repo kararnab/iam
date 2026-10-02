@@ -143,6 +143,17 @@ type Service interface {
 	// identity to an existing subject. It fails with ErrIdentityLinked if
 	// the identity already belongs to a different subject.
 	LinkIdentity(ctx context.Context, subjectID string, req AuthRequest) error
+
+	// SignUp creates a subject for a new identity and starts a session,
+	// subject to the sign-up policy (closed, invite-only or open).
+	SignUp(ctx context.Context, req SignUpRequest) (*LoginResult, error)
+
+	// CreateInvite issues a single-use, expiring invite. The application
+	// must authorize the inviter first.
+	CreateInvite(ctx context.Context, req InviteRequest) (*IssuedInvite, error)
+
+	// RevokeInvite deletes an unused invite.
+	RevokeInvite(ctx context.Context, inviteID string) error
 }
 
 var (
