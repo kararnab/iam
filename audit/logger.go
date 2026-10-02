@@ -1,3 +1,10 @@
+// Package audit defines the security events IAM emits (logins, logouts,
+// refreshes, refresh-token reuse, revocations, policy denials, sign-ups,
+// invites, throttling) and the Logger interface that receives them.
+//
+// IAM decides what happened; the Logger decides where it goes. SlogLogger
+// writes to log/slog; Multi and Func compose custom sinks. Events never
+// contain passwords, tokens or session secrets.
 package audit
 
 import (

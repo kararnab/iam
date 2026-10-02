@@ -1,33 +1,105 @@
-# iam
+# iam: authentication and authorization for Go web apps
 
-A small, importable authentication and authorization library for Go web
-applications and APIs.
+[![Go Reference](https://pkg.go.dev/badge/github.com/kararnab/iam/v2.svg)](https://pkg.go.dev/github.com/kararnab/iam/v2)
+[![CI](https://github.com/kararnab/iam/actions/workflows/ci.yml/badge.svg)](https://github.com/kararnab/iam/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/kararnab/iam/v2)](https://goreportcard.com/report/github.com/kararnab/iam/v2)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`iam` sits between your application and its identity providers. It logs
-users in through pluggable providers (passwords, Google, any OpenID Connect
-issuer), keeps server-side sessions, issues short-lived access tokens,
-evaluates authorization policies and emits audit events. Your application
-keeps owning its users and its business logic.
+**Logins, sessions, JWT, RBAC and invites for Go web apps and APIs, with
+secure defaults. It is one library to import, not another server to run.**
 
-- **Two session modes:** HttpOnly cookie sessions for same-origin web apps
-  (the default), or bearer access tokens with rotating refresh tokens for
-  APIs and mobile clients. One service can serve both.
-- **Secure defaults:** deny-by-default authorization, hashed session secrets
-  and refresh tokens, refresh-token reuse detection, argon2id passwords,
-  pinned JWT algorithms, CSRF and cross-origin protection, login throttling.
-- **Small core:** the core module depends only on the standard library and
-  `golang.org/x/crypto`. Integrations are opt-in modules.
-- **No HTTP in the core service:** `iam.Service` takes and returns plain data,
-  so it can later sit behind gRPC or become a remote service.
-  `httpauth` adapts it to `net/http`.
+`iam` gives your Go application password and Google/OIDC sign-in,
+server-side sessions (HttpOnly cookies for browsers, rotating refresh tokens
+for APIs and mobile), deny-by-default role-based access control,
+invite-only sign-up, login throttling and audit logs. It works with
+`net/http`, keeps your users in your own database, and depends only on the
+standard library and `golang.org/x/crypto`.
 
-> **Versioning:** the first library release is `v2.0.0`, because this
-> repository's earlier tags (`v1.0-nodejs`, `v1.1-golang`) were the demo
-> application. Go therefore imports it as `github.com/kararnab/iam/v2`. It
-> follows semantic versioning: no breaking changes within v2. See the
-> [changelog](CHANGELOG.md).
+```go
+svc, _ := iam.New(iam.Config{
+    Providers: []provider.AuthProvider{passwords},   // + oidc.NewGoogle(...)
+    Users:     users,                                // your user table, or pgstore
+    Sessions:  memstore.NewSessions(),               // or pgstore / redisstore
+    Policy:    rbac,                                 // nothing is allowed until you grant it
+})
+auth, _ := httpauth.New(httpauth.Config{Service: svc})
 
-## Modules
+mux.Handle("GET /notes", auth.RequirePermission("read", "note", nil)(notes))
+http.ListenAndServe(":8080", auth.Protect(mux))      // sessions, CSRF, cross-origin checks
+```
+
+Try it in ten seconds, with no clone needed:
+
+```sh
+go run github.com/kararnab/iam/v2/examples/quickstart@latest
+```
+
+## Why iam?
+
+You could combine a JWT library, a session manager, an OAuth helper and a
+policy engine, and then write the glue that gets security wrong:
+refresh-token reuse, CSRF on cookie sessions, user enumeration, roles that
+go stale after a refresh. `iam` is that glue, designed together and tested
+together.
+
+| | Login providers | Sessions | Access tokens | Authorization | Runs as |
+|---|:-:|:-:|:-:|:-:|---|
+| **iam** | password, Google, OIDC | ✅ cookie + bearer, rotation | ✅ JWT, PASETO | ✅ RBAC + your rules | a library |
+| golang-jwt/jwt | – | – | ✅ JWT | – | a library |
+| alexedwards/scs | – | ✅ cookie | – | – | a library |
+| markbates/goth | ✅ many OAuth | – | – | – | a library |
+| casbin | – | – | – | ✅ many models | a library |
+| Ory Kratos, Keycloak, Zitadel | ✅ | ✅ | ✅ | partly | a separate server |
+
+Those are excellent tools; choose them when you need only their part, or
+when you want a separate identity server. `iam` doesn't do everything yet.
+If you need password reset, MFA or passkeys today, see the
+[roadmap](#roadmap).
+
+## Features
+
+- 🍪 **Two session modes:** HttpOnly, `__Host-` cookie sessions for browsers
+  (the default), and short-lived access tokens with **rotating refresh
+  tokens** for APIs and mobile apps. One service can serve both.
+- 🔁 **Refresh-token reuse detection:** replaying an old refresh token
+  revokes the whole session.
+- 🔑 **Sign-in:** argon2id passwords (bcrypt hashes are upgraded
+  automatically), Google and any OpenID Connect issuer, plus **identity
+  linking**: one user, many ways to sign in.
+- 🛡️ **Deny-by-default RBAC**, composable with your own rules (for example
+  "owners can edit").
+- ✉️ **Invite-only sign-up** with single-use, expiring invites, switchable to
+  open or closed.
+- 🚦 **Login throttling** per account and per IP, on by default.
+- 🧾 **Audit events** (logins, reuse detection, lockouts, denials) through
+  `log/slog`, and **Prometheus** metrics.
+- 👀 **Session management:** list devices, revoke one, "log out everywhere
+  else".
+- 🧩 **Pluggable everything:** providers, stores (memory, PostgreSQL, Redis,
+  yours), policy engines, token formats (JWT, PASETO), audit sinks.
+- 🪶 **Small core:** standard library and `golang.org/x/crypto` only.
+  Integrations are opt-in modules.
+
+### Built to be trusted
+
+- A [threat model](SECURITY.md) with documented defaults, and a list of
+  what the library deliberately does not do.
+- Fuzz tests for every parser this library implements for untrusted input:
+  JWT, PASETO, session cookies, password hashes. They run weekly in CI.
+- A [store conformance suite](storetest) that the memory, PostgreSQL and
+  Redis stores all pass, including concurrent-rotation races.
+- `go test -race`, `staticcheck` and `govulncheck` on every module, with
+  Go 1.26 and 1.27.
+- End-to-end tests of every flow in the [demo app](examples/demo), on
+  PostgreSQL.
+
+## Install
+
+```sh
+go get github.com/kararnab/iam/v2
+```
+
+Add only the integrations you use:
 
 | Module | Adds | Dependencies |
 |---|---|---|
@@ -38,16 +110,24 @@ keeps owning its users and its business logic.
 | `github.com/kararnab/iam/redisstore/v2` | Redis session store and shared rate limiter | `redis/go-redis/v9` |
 | `github.com/kararnab/iam/prometheus/v2` | Prometheus metrics | `prometheus/client_golang` |
 
-```sh
-go get github.com/kararnab/iam/v2
-go get github.com/kararnab/iam/pgstore/v2   # only what you use
-```
-
-Requires Go 1.26 or later.
+Requires Go 1.26 or later. Versions follow semantic versioning. The first
+release is v2.0.0 because this repository's earlier tags belonged to the
+demo application. See the [changelog](CHANGELOG.md).
 
 ## Five-minute guide: a net/http app with cookie sessions and invites
 
 The complete program is [`examples/quickstart`](examples/quickstart/main.go).
+
+```go
+import (
+    "github.com/kararnab/iam/v2"
+    "github.com/kararnab/iam/v2/httpauth"
+    "github.com/kararnab/iam/v2/memstore"
+    "github.com/kararnab/iam/v2/password"
+    "github.com/kararnab/iam/v2/policy"
+    "github.com/kararnab/iam/v2/provider"
+)
+```
 
 **1. Users and passwords.** Users belong to your application. `memstore`
 keeps them in memory; use [`pgstore`](docs/stores.md) or implement
@@ -117,8 +197,8 @@ http.ListenAndServe("localhost:8080", auth.Protect(mux))
 **5. Try it.**
 
 ```sh
-go run ./examples/quickstart     # prints an invite token
-INVITE=...                       # paste it
+go run github.com/kararnab/iam/v2/examples/quickstart@latest   # prints an invite token
+INVITE=...                                                      # paste it
 
 curl -c jar localhost:8080/signup \
   -d "{\"username\":\"ana@example.com\",\"password\":\"correct horse battery staple\",\"invite\":\"$INVITE\"}"
@@ -173,29 +253,48 @@ again revokes the whole session.
 - **Audit and metrics:** security events (logins, refreshes, reuse
   detection, lockouts, denials, sign-ups) go to an `audit.Logger`, and
   counters go to a `metrics.Recorder`.
+- **No HTTP in the core service:** `iam.Service` takes and returns plain
+  data, so it can later sit behind gRPC or become a remote service.
+  `httpauth` adapts it to `net/http`.
 
-## Extension points
+## Documentation
 
-Each one is an interface with an in-memory or standard-library reference
-implementation:
-
-- [Identity providers](docs/providers.md): password, OIDC/Google, your own
-- [Stores](docs/stores.md): users and identities, sessions, invites (memory, PostgreSQL, Redis, your own)
-- [Policy](docs/policy.md): RBAC, composition, custom engines
-- [Audit](docs/audit.md): event types and sinks
-- [Metrics](docs/metrics.md): counters and Prometheus
-- [Access tokens](docs/tokens.md): JWT, PASETO, key rotation
-
-Also: [architecture](docs/architecture.md) and [security model](SECURITY.md).
+- [API reference on pkg.go.dev](https://pkg.go.dev/github.com/kararnab/iam/v2)
+- Extension points, each an interface with a reference implementation:
+  - [Identity providers](docs/providers.md): password, OIDC/Google, your own
+  - [Stores](docs/stores.md): users and identities, sessions, invites (memory, PostgreSQL, Redis, your own)
+  - [Policy](docs/policy.md): RBAC, composition, custom engines
+  - [Audit](docs/audit.md): event types and sinks
+  - [Metrics](docs/metrics.md): counters and Prometheus
+  - [Access tokens](docs/tokens.md): JWT, PASETO, key rotation
+- [Architecture](docs/architecture.md) and the [security model](SECURITY.md)
 
 ## The demo app
 
 [`examples/demo`](examples/demo) is a books API that uses the library the way
 any consumer would: cookie and bearer endpoints, invite-only sign-up, RBAC,
 session management, throttling, Prometheus, and optional PostgreSQL. See
-its [README](examples/demo/README.md).
+its [README](examples/demo/README.md) and [OpenAPI spec](examples/demo/openapi.yaml).
 
-## Development
+## Roadmap
+
+Planned, roughly in this order. Upvotes and comments on issues help decide.
+
+- OIDC authorization-code flow helpers (redirect, PKCE, state)
+- Password reset and email verification, reusing the invite-token machinery
+- TOTP multi-factor authentication
+- WebAuthn and passkeys
+- Publishing JWKS for EdDSA access tokens
+
+`iam` will not become an OAuth 2.0 authorization server; see
+[SECURITY.md](SECURITY.md#what-the-library-deliberately-does-not-do).
+
+## Contributing
+
+Issues and pull requests are welcome, especially new stores, providers,
+and examples for other routers (chi, echo, gin). Please open an issue
+before large changes. Report security problems privately as described in
+[SECURITY.md](SECURITY.md).
 
 ```sh
 ./scripts/each-module.sh go test -race ./...     # every module
@@ -207,8 +306,7 @@ export IAM_TEST_REDIS_ADDR='localhost:6379'
 go test ./token/jwt -run '^$' -fuzz FuzzVerify    # fuzzing (see .github/workflows/fuzz.yml)
 ```
 
-CI runs `go vet`, `gofmt`, `staticcheck`, `govulncheck` and `go test -race`
-on every module with Go 1.26 and 1.27.
+If `iam` saves you time, a ⭐ helps other Go developers find it.
 
 ## License
 
