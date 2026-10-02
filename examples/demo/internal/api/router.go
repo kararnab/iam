@@ -21,21 +21,20 @@ func NewRouter(
 	mux.HandleFunc("POST /api/refresh", auth.Refresh)
 	mux.HandleFunc("POST /api/logout", auth.Logout)
 
-	// Protected
+	// Protected: authenticate, then authorize with the RBAC policy.
 	authn := AuthMiddleware(auth.IAM)
-	mux.Handle("GET /api/books", authn(http.HandlerFunc(books.List)))
-	mux.Handle("POST /api/books", authn(http.HandlerFunc(books.Create)))
-	mux.Handle("GET /api/books/{id}", authn(http.HandlerFunc(books.Get)))
-	mux.Handle("PUT /api/books/{id}", authn(http.HandlerFunc(books.Update)))
-	mux.Handle("DELETE /api/books/{id}", authn(http.HandlerFunc(books.Delete)))
+	can := func(action policy.Action, resourceType string, h http.HandlerFunc) http.Handler {
+		return authn(PolicyMiddleware(auth.IAM, action, policy.Resource{Type: resourceType})(h))
+	}
+
+	mux.Handle("GET /api/books", can(ActionRead, ResourceBook, books.List))
+	mux.Handle("POST /api/books", can(ActionWrite, ResourceBook, books.Create))
+	mux.Handle("GET /api/books/{id}", can(ActionRead, ResourceBook, books.Get))
+	mux.Handle("PUT /api/books/{id}", can(ActionWrite, ResourceBook, books.Update))
+	mux.Handle("DELETE /api/books/{id}", can(ActionWrite, ResourceBook, books.Delete))
 
 	// Admin
-	adminOnly := PolicyMiddleware(
-		auth.IAM,
-		policy.Action(policy.Admin),
-		policy.ResourceContext{Type: policy.Admin},
-	)
-	mux.Handle("POST /admin/keys/rotate", authn(adminOnly(http.HandlerFunc(keyRotationHandler.Rotate))))
+	mux.Handle("POST /admin/keys/rotate", can(ActionRotate, ResourceSigningKey, keyRotationHandler.Rotate))
 
 	return mux
 }

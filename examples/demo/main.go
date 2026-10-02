@@ -23,7 +23,6 @@ import (
 	googleprov "github.com/kararnab/iam/oidc/google"
 	"github.com/kararnab/iam/paseto"
 	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/policy"
 	"github.com/kararnab/iam/provider"
 	"github.com/kararnab/iam/session"
 	"github.com/kararnab/iam/token"
@@ -179,7 +178,7 @@ func buildIAMService(
 		return nil, err
 	}
 	adminLogin := password.NormalizeLogin(secretUserName)
-	userStore.PutSubject(iam.Subject{ID: secretUserId, Roles: []string{policy.Admin}})
+	userStore.PutSubject(iam.Subject{ID: secretUserId, Roles: []string{api.RoleAdmin}})
 	if err := userStore.CreateCredential(ctx, adminLogin, string(legacyHash)); err != nil {
 		return nil, err
 	}
@@ -243,6 +242,10 @@ func buildIAMService(
 	// -------------------------------
 	// IAM service
 	// -------------------------------
+	rbac, err := api.NewPolicy()
+	if err != nil {
+		return nil, err
+	}
 	iamService, err := iam.New(iam.Config{
 		Providers: providers,
 		Users:     userStore,
@@ -251,7 +254,7 @@ func buildIAMService(
 		AllowedModes:  []session.Mode{session.ModeBearer, session.ModeCookie},
 		TokenIssuer:   issuer,
 		TokenVerifier: verifier,
-		Policy:        &policy.DefaultPolicy{},
+		Policy:        rbac,
 		Audit:         audit.NewSlogLogger(nil),
 		Metrics:       iamMetrics,
 	})

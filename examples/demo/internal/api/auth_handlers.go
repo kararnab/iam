@@ -46,7 +46,7 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO(P6): sign-up moves into iam.Service.SignUp (invite-only by default).
-	subjectID, err := h.Users.CreateSubject(ctx, *identity, iam.SignupGrant{})
+	subjectID, err := h.Users.CreateSubject(ctx, *identity, iam.SignupGrant{Roles: []string{RoleReader}})
 	if err == nil {
 		err = h.Users.LinkIdentity(ctx, subjectID, *identity)
 	}

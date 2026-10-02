@@ -40,7 +40,7 @@ func AuthMiddleware(iamSvc iam.Service) func(http.Handler) http.Handler {
 func PolicyMiddleware(
 	iamSvc iam.Service,
 	action policy.Action,
-	resource policy.ResourceContext,
+	resource policy.Resource,
 ) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {

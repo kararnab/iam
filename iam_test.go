@@ -55,7 +55,7 @@ func (fakeOIDC) Authenticate(_ context.Context, p map[string]string) (*provider.
 // adminOnly allows everything for "admin" and nothing else (P5 replaces it with RBAC).
 type adminOnly struct{ err error }
 
-func (a adminOnly) Evaluate(_ context.Context, s policy.SubjectContext, _ policy.Action, _ policy.ResourceContext) (*policy.Decision, error) {
+func (a adminOnly) Evaluate(_ context.Context, s policy.SubjectContext, _ policy.Action, _ policy.Resource) (*policy.Decision, error) {
 	if a.err != nil {
 		return nil, a.err
 	}
@@ -436,7 +436,7 @@ func TestAuthorize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newFixture(t, func(c *iam.Config) { c.Policy = tt.engine })
-			d, err := f.svc.Authorize(ctx, tt.subject, "read", policy.ResourceContext{Type: "book"})
+			d, err := f.svc.Authorize(ctx, tt.subject, "read", policy.Resource{Type: "book"})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}

@@ -142,8 +142,10 @@ a non-empty `sub` and rejects input longer than 8 KiB.
   is removed.
 - `policy.RBAC` is configured as `map[Role][]Permission{ {Action, ResourceType} }`. A `*` wildcard is
   allowed for action and for resource type. Explicit deny rules are not included in v0.1.
-- `policy.Chain(engines...)` returns the first decision that is not "no opinion". `policy.Func` adapts a
-  plain function, which is how a consumer adds ownership or ABAC checks.
+- `policy.AnyOf(engines...)` allows if any engine allows; `policy.AllOf(engines...)` allows only if all
+  do. Both fail closed on errors. (Changed during P5 from the originally planned `Chain`, which needed a
+  "no opinion" effect and was harder to reason about.) `policy.Func` adapts a plain function, which is
+  how a consumer adds ownership or ABAC checks.
 - If the engine returns an error, the result is **deny**, and the denial is audited.
 
 ### D10. Password hashing
@@ -251,7 +253,7 @@ a non-empty `sub` and rejects input longer than 8 KiB.
 ├── token/                          Issuer, Verifier, Claims
 │   ├── jwt/                        stdlib JWS (HS256, EdDSA), pinned alg/iss/aud/leeway
 │   └── keys/                       Key{ID, Alg, Material}, Provider, MemoryProvider (rotation-safe)
-├── policy/                         Engine, Decision, DenyAll, RBAC, Chain, Func
+├── policy/                         Engine, Decision, DenyAll, RBAC, AnyOf, AllOf, Func
 ├── invite/                         Invite, Store, SignupPolicy
 ├── ratelimit/                      Limiter, LockoutHooks, memory limiter
 ├── audit/                          Logger, Event, SlogLogger, Multi
@@ -378,7 +380,7 @@ Every phase ends with `go vet`, `go test -race` across all modules, and one comm
 | P2 | Tokens: stdlib JWT with pinned alg, `kid` lookup, iss, aud, leeway and `typ`. A `keys.Provider` that the issuer reads on every issue. Fuzz tests for the JWT parser. | F8, F11, F15 |
 | P3 | Subjects: `SubjectLoader`/`IdentityStore`/`CredentialStore`, canonical ID, identity linking, the `password` package (argon2id and bcrypt migration), the `password` provider with a dummy-hash path, and the `memstore` users. Fuzz tests for PHC parsing. | F5, F12 |
 | P4 | Sessions: hashed storage, both modes, rotation and reuse detection with `ReuseGrace`, idle and absolute expiry, list and revoke, revoke-all. `Refresh` reloads the subject. Fuzz tests for refresh-token and cookie decoding. | F4, F6 |
-| P5 | Policy: deny by default, RBAC, Chain, Func, audited denials. | F7 |
+| P5 | Policy: deny by default, RBAC, AnyOf/AllOf, Func, audited denials. | F7 |
 | P6 | Sign-up and invites, the rate limiter and lockout hooks, the full set of audit events, `metrics.Recorder`, and the nil-safe defaults. | F13, F14 |
 | P7 | `httpauth`: middleware, cookie helpers, CSRF, context helpers. The demo is rewired onto the library and `httpauth`. End-to-end tests run both the cookie flow (invite, sign-up, login, CSRF, books, log out everywhere) and the bearer flow (login, refresh, reuse, revoked). Server timeouts and the admin port are added. | F2, F17, F18 |
 | P8 | Sub-modules: `oidc` (issuer check, nonce, Google), `prometheus`, `paseto` v4, `pgstore` (with migrations and a CI Postgres service), `redisstore` (sessions and limiter, with a CI Redis service). | F9, F16 |

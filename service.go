@@ -341,7 +341,7 @@ func (s *service) Authorize(
 	ctx context.Context,
 	subject *Subject,
 	action policy.Action,
-	resource policy.ResourceContext,
+	resource policy.Resource,
 ) (*policy.Decision, error) {
 
 	deny := func(subjectID, reason string, err error) (*policy.Decision, error) {
@@ -372,7 +372,7 @@ func (s *service) Authorize(
 	if err != nil {
 		return deny(subject.ID, "policy error", err)
 	}
-	if decision == nil || decision.Effect != policy.EffectAllow {
+	if !decision.Allowed() {
 		reason := "no matching policy"
 		if decision != nil && decision.Reason != "" {
 			reason = decision.Reason

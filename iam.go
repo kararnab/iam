@@ -119,7 +119,7 @@ type Service interface {
 
 	// Authorize evaluates whether a subject may perform an action on a
 	// resource. Engine errors and missing subjects result in a deny.
-	Authorize(ctx context.Context, subject *Subject, action policy.Action, resource policy.ResourceContext) (*policy.Decision, error)
+	Authorize(ctx context.Context, subject *Subject, action policy.Action, resource policy.Resource) (*policy.Decision, error)
 
 	// Logout ends the session that owns the given session token or refresh
 	// token. Unknown tokens are not an error.
