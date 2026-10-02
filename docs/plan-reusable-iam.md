@@ -245,8 +245,8 @@ a non-empty `sub` and rejects input longer than 8 KiB.
 /                                   module github.com/kararnab/iam            (stdlib + x/crypto)
 ├── iam.go  config.go  service.go   Service interface, Subject, AuthRequest, Config, New, errors
 ├── provider/                       AuthProvider, Identity, optional Registrar interface
-│   └── password/                   username/password provider (replaces inhouse)
-├── password/                       Hasher, argon2id, bcrypt-verify, PHC encoding
+├── password/                       Hasher, argon2id, bcrypt-verify, PHC encoding, and the
+│                                   username/password Provider (replaces inhouse)
 ├── session/                        Session, Store, rotation and reuse logic, token generation and hashing
 ├── token/                          Issuer, Verifier, Claims
 │   ├── jwt/                        stdlib JWS (HS256, EdDSA), pinned alg/iss/aud/leeway
@@ -329,7 +329,8 @@ type Service interface {
 4. `Subject.ID` is now the canonical internal ID, not the provider ID. Tokens issued before the change
    no longer map to the same subject.
 5. `provider.Identity.Roles` is removed, and `EmailVerified bool` is added.
-6. `provider/inhouse` becomes `provider/password`. `inhouse.User` and `inhouse.UserStore` are replaced by
+6. `provider/inhouse` becomes `password.Provider` (in the `password` package, next to the hasher, so
+   consumers don't need to alias two packages both named `password`). `inhouse.User` and `inhouse.UserStore` are replaced by
    `password.CredentialStore` plus `IdentityStore`, and the provider name `internal` becomes `password`.
 7. `provider/google` is removed and replaced by `oidc.NewGoogle` in the sub-module. The name
    `generic-oidc` becomes a configurable name.

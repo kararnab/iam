@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/kararnab/iam/provider"
 	"google.golang.org/api/idtoken"
@@ -40,7 +41,7 @@ func (p *Provider) Authenticate(
 
 	payload, err := idtoken.Validate(ctx, rawToken, p.clientID)
 	if err != nil {
-		return nil, errors.New("invalid google id_token")
+		return nil, fmt.Errorf("google: %w", provider.ErrInvalidCredentials)
 	}
 
 	sub, ok := payload.Claims["sub"].(string)
@@ -50,10 +51,14 @@ func (p *Provider) Authenticate(
 
 	email, _ := payload.Claims["email"].(string)
 	name, _ := payload.Claims["name"].(string)
+	verified, _ := payload.Claims["email_verified"].(bool)
 
 	return &provider.Identity{
-		Provider:   p.Name(),
-		ProviderID: sub, // stable Google user ID
+		Provider:      p.Name(),
+		ProviderID:    sub, // stable Google user ID
+		Email:         email,
+		EmailVerified: verified,
+		DisplayName:   name,
 		Attrs: map[string]string{
 			"email": email,
 			"name":  name,

@@ -126,6 +126,8 @@ func TestVerifyRejects(t *testing.T) {
 		{"two parts", "a.b", t0, false},
 		{"four parts", good + ".x", t0, false},
 		{"padded base64", strings.Replace(good, ".", "=.", 1), t0, false},
+		{"newline in signature", good[:len(good)-4] + "\n" + good[len(good)-4:], t0, false},
+		{"space", " " + good, t0, false},
 		{"too large", strings.Repeat("a", MaxTokenSize+1), t0, false},
 		{"alg none", unsigned(hdr("none", "hs-1", "at+jwt"), validBody()), t0, false},
 		{"alg mismatch HS512", forge(t, hsKey, hdr("HS512", "hs-1", "at+jwt"), validBody()), t0, false},

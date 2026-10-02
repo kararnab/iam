@@ -14,6 +14,7 @@ const (
 	EventTokenVerifyFailure EventType = "token_verify_failure"
 	EventSessionRevoked     EventType = "session_revoked"
 	EventPolicyDenied       EventType = "policy_denied"
+	EventIdentityLinked     EventType = "identity_linked"
 )
 
 // Event represents a single audit log entry.

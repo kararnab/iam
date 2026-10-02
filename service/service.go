@@ -29,6 +29,9 @@ func New(opts Options) (*Service, error) {
 	if len(opts.Providers) == 0 {
 		return nil, errors.New("iam: at least one provider must be configured")
 	}
+	if opts.Users == nil {
+		return nil, errors.New("iam: user store is required")
+	}
 	if opts.SessionManager == nil || opts.SessionStore == nil {
 		return nil, errors.New("iam: session manager and store are required")
 	}
@@ -57,17 +60,28 @@ func (s *Service) Refresh(
 			Type:    audit.EventTokenRefresh,
 			Message: "refresh failed",
 			Attrs: map[string]string{
-				"reason": err.Error(),
+				"reason": "invalid_session",
 			},
 		})
 		return "", err
 	}
 
-	claims := token.Claims{
-		SubjectID: sess.SubjectID,
+	// Reload the subject so roles and attributes are current, and so a
+	// disabled or deleted subject cannot keep refreshing.
+	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
+	if err != nil {
+		_ = s.opts.SessionManager.Revoke(ctx, refreshToken)
+		s.opts.Metrics.TokenRefreshFailure()
+		_ = s.opts.AuditLogger.Log(ctx, audit.Event{
+			Type:      audit.EventTokenRefresh,
+			SubjectID: sess.SubjectID,
+			Message:   "refresh failed",
+			Attrs:     map[string]string{"reason": "subject_unavailable"},
+		})
+		return "", err
 	}
 
-	accessToken, err := s.opts.TokenIssuer.Issue(ctx, claims)
+	accessToken, err := s.opts.TokenIssuer.Issue(ctx, claimsFor(subject))
 	if err != nil {
 		return "", err
 	}
@@ -112,10 +126,24 @@ func (s *Service) Authenticate(
 		return nil, err
 	}
 
-	subject := iam.Subject{
-		ID:    identity.ProviderID,
-		Roles: identity.Roles, // []string{policy.Admin} or nil, this role defines what the user will be able to access (RBAC)
-		Attrs: identity.Attrs,
+	subjectID, err := s.opts.Users.ResolveIdentity(ctx, identity.Provider, identity.ProviderID)
+	if errors.Is(err, iam.ErrNotFound) {
+		err = iam.ErrUnknownIdentity
+	}
+	var subject *iam.Subject
+	if err == nil {
+		subject, err = s.loadActiveSubject(ctx, subjectID)
+	}
+	if err != nil {
+		s.opts.Metrics.AuthFailure()
+		_ = s.opts.AuditLogger.Log(ctx, audit.Event{
+			Type:      audit.EventAuthFailure,
+			SubjectID: subjectID,
+			Provider:  req.Provider,
+			Message:   "authentication failed",
+			Attrs:     map[string]string{"reason": reasonFor(err)},
+		})
+		return nil, err
 	}
 
 	session, err := s.opts.SessionManager.Create(ctx, subject.ID, nil)
@@ -130,14 +158,7 @@ func (s *Service) Authenticate(
 		return nil, err
 	}
 
-	accessToken, err := s.opts.TokenIssuer.Issue(
-		ctx,
-		token.Claims{
-			SubjectID: subject.ID,
-			Roles:     subject.Roles,
-			Attrs:     subject.Attrs,
-		},
-	)
+	accessToken, err := s.opts.TokenIssuer.Issue(ctx, claimsFor(subject))
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +174,7 @@ func (s *Service) Authenticate(
 	return &iam.AuthResult{
 		AccessToken:  accessToken,
 		RefreshToken: session.ID,
-		Subject:      subject,
+		Subject:      *subject,
 	}, nil
 }
 
@@ -238,4 +259,82 @@ func (s *Service) Revoke(
 	})
 
 	return nil
+}
+
+func (s *Service) LinkIdentity(
+	ctx context.Context,
+	subjectID string,
+	req iam.AuthRequest,
+) error {
+
+	if _, err := s.loadActiveSubject(ctx, subjectID); err != nil {
+		return err
+	}
+
+	prov, ok := s.opts.Providers[req.Provider]
+	if !ok {
+		return errors.New("iam: unknown provider")
+	}
+	identity, err := prov.Authenticate(ctx, req.Params)
+	if err != nil {
+		return err
+	}
+
+	owner, err := s.opts.Users.ResolveIdentity(ctx, identity.Provider, identity.ProviderID)
+	switch {
+	case err == nil && owner == subjectID:
+		return nil // already linked to this subject
+	case err == nil:
+		return iam.ErrIdentityLinked
+	case !errors.Is(err, iam.ErrNotFound):
+		return err
+	}
+
+	if err := s.opts.Users.LinkIdentity(ctx, subjectID, *identity); err != nil {
+		if errors.Is(err, iam.ErrConflict) {
+			return iam.ErrIdentityLinked // lost a race with another link
+		}
+		return err
+	}
+
+	_ = s.opts.AuditLogger.Log(ctx, audit.Event{
+		Type:      audit.EventIdentityLinked,
+		SubjectID: subjectID,
+		Provider:  identity.Provider,
+		Message:   "identity linked",
+	})
+	return nil
+}
+
+// loadActiveSubject loads a subject and rejects disabled ones.
+func (s *Service) loadActiveSubject(ctx context.Context, subjectID string) (*iam.Subject, error) {
+	subject, err := s.opts.Users.LoadSubject(ctx, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	if subject.Disabled {
+		return nil, iam.ErrSubjectDisabled
+	}
+	return subject, nil
+}
+
+func claimsFor(subject *iam.Subject) token.Claims {
+	return token.Claims{
+		SubjectID: subject.ID,
+		Roles:     subject.Roles,
+		Attrs:     subject.Attrs,
+	}
+}
+
+func reasonFor(err error) string {
+	switch {
+	case errors.Is(err, iam.ErrUnknownIdentity):
+		return "unknown_identity"
+	case errors.Is(err, iam.ErrSubjectDisabled):
+		return "subject_disabled"
+	case errors.Is(err, iam.ErrNotFound):
+		return "subject_not_found"
+	default:
+		return "store_error"
+	}
 }

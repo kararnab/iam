@@ -2,20 +2,24 @@ package api
 
 import (
 	"github.com/kararnab/iam"
-	internalprov "github.com/kararnab/iam/provider/inhouse"
+	"github.com/kararnab/iam/memstore"
+	"github.com/kararnab/iam/password"
 )
 
 type Handlers struct {
 	IAM       iam.Service
-	UserStore internalprov.UserStore
+	Users     *memstore.Users
+	Passwords *password.Provider
 }
 
 func NewHandlers(
 	iamSvc iam.Service,
-	userStore internalprov.UserStore,
+	users *memstore.Users,
+	passwords *password.Provider,
 ) *Handlers {
 	return &Handlers{
 		IAM:       iamSvc,
-		UserStore: userStore,
+		Users:     users,
+		Passwords: passwords,
 	}
 }

@@ -3,6 +3,7 @@ package oidc
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/kararnab/iam/provider"
@@ -52,12 +53,13 @@ func (p *Provider) Authenticate(
 
 	idToken, err := p.verifier.Verify(ctx, rawToken)
 	if err != nil {
-		return nil, errors.New("invalid keycloak id_token")
+		return nil, fmt.Errorf("oidc: %w", provider.ErrInvalidCredentials)
 	}
 
 	var claims struct {
 		Sub               string `json:"sub"`
 		Email             string `json:"email"`
+		EmailVerified     bool   `json:"email_verified"`
 		Name              string `json:"name"`
 		PreferredUsername string `json:"preferred_username"`
 	}
@@ -71,8 +73,11 @@ func (p *Provider) Authenticate(
 	}
 
 	return &provider.Identity{
-		Provider:   p.Name(),
-		ProviderID: claims.Sub, // stable Keycloak user ID
+		Provider:      p.Name(),
+		ProviderID:    claims.Sub, // stable Keycloak user ID
+		Email:         claims.Email,
+		EmailVerified: claims.EmailVerified,
+		DisplayName:   claims.Name,
 		Attrs: map[string]string{
 			"email":    claims.Email,
 			"name":     claims.Name,

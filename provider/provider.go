@@ -1,6 +1,13 @@
 package provider
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrInvalidCredentials is returned (wrapped) by providers when the
+// credentials or assertion are wrong. It never says which part was wrong.
+var ErrInvalidCredentials = errors.New("provider: invalid credentials")
 
 // Identity represents a verified external identity returned by an
 // authentication provider.
@@ -9,13 +16,16 @@ import "context"
 // It is an intermediate representation used to:
 //   - normalize identities
 //   - map external users to internal subjects
+//
+// Identities carry no roles: authorization data belongs to the application
+// and is loaded through iam.SubjectLoader.
 type Identity struct {
-	Provider    string            // e.g. "google", "keycloak", "internal"
-	ProviderID  string            // stable external identifier (sub, user_id)
-	Email       string            // optional, provider-dependent
-	DisplayName string            // optional, provider-dependent
-	Roles       []string          // optional, provider-dependent
-	Attrs       map[string]string // raw provider attributes (claims, metadata)
+	Provider      string            // e.g. "google", "oidc", "password"
+	ProviderID    string            // stable external identifier (sub, login)
+	Email         string            // optional, provider-dependent
+	EmailVerified bool              // true only if the provider asserts it
+	DisplayName   string            // optional, provider-dependent
+	Attrs         map[string]string // raw provider attributes (claims, metadata)
 }
 
 // AuthProvider defines the contract every identity provider must satisfy.
@@ -41,7 +51,8 @@ type AuthProvider interface {
 	Name() string
 
 	// Authenticate validates the authentication request and returns
-	// a verified external identity.
+	// a verified external identity. Failed credentials must return an error
+	// wrapping ErrInvalidCredentials.
 	//
 	// The meaning of params is provider-specific.
 	//
@@ -58,4 +69,18 @@ type AuthProvider interface {
 		ctx context.Context,
 		params map[string]string,
 	) (*Identity, error)
+}
+
+// Registrar is implemented by providers that can create new credentials,
+// such as username/password. It is used for sign-up.
+type Registrar interface {
+	AuthProvider
+
+	// Register validates and stores new credentials, returning the identity
+	// they authenticate as.
+	Register(ctx context.Context, params map[string]string) (*Identity, error)
+
+	// Unregister removes credentials created by Register. IAM calls it to
+	// roll back a sign-up that failed after Register succeeded.
+	Unregister(ctx context.Context, providerID string) error
 }

@@ -19,7 +19,7 @@
         },
         "body": {
           "contentType": "application/json",
-          "body": "{\n\"provider\": \"internal\",\n  \"params\": {\n    \"username\": \"admin@gmail.com\",\n  \t\"password\": \"p@$$w0rd1\"\n  }\n}"
+          "body": "{\n\"provider\": \"password\",\n  \"params\": {\n    \"username\": \"admin@gmail.com\",\n  \t\"password\": \"p@$$w0rd1\"\n  }\n}"
         },
         "requestVariables": [],
         "responses": {},
@@ -40,7 +40,7 @@
         },
         "body": {
           "contentType": "application/json",
-          "body": "{\n  \"username\": \"alice\",\n  \"password\": \"alice123\"\n}"
+          "body": "{\n  \"username\": \"alice\",\n  \"password\": \"alice-long-password\"\n}"
         },
         "requestVariables": [],
         "responses": {},
@@ -61,7 +61,7 @@
         },
         "body": {
           "contentType": "application/json",
-          "body": "{\n  \"provider\": \"internal\",\n  \"params\": {\n    \"username\": \"alice\",\n    \"password\": \"alice123\"\n  }\n}\n"
+          "body": "{\n  \"provider\": \"password\",\n  \"params\": {\n    \"username\": \"alice\",\n    \"password\": \"alice-long-password\"\n  }\n}\n"
         },
         "requestVariables": [],
         "responses": {},

@@ -166,6 +166,14 @@ func split(tok string) (hdr, body, sig []byte, input string, err error) {
 	if len(tok) > MaxTokenSize {
 		return nil, nil, nil, "", invalid("token too large")
 	}
+	// Only the base64url alphabet and dots. The decoder would otherwise skip
+	// CR/LF, letting one signed token have many accepted spellings.
+	for i := 0; i < len(tok); i++ {
+		c := tok[i]
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '-' || c == '_' || c == '.') {
+			return nil, nil, nil, "", invalid("malformed")
+		}
+	}
 	if strings.Count(tok, ".") != 2 {
 		return nil, nil, nil, "", invalid("malformed")
 	}

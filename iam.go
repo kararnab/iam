@@ -8,18 +8,25 @@ import (
 
 // Subject represents an authenticated principal in the system.
 // This is the ONLY identity shape business code should see.
+//
+// ID is the application's canonical subject ID. It is never a provider's
+// user ID: one subject may sign in through several providers (see
+// IdentityStore).
 type Subject struct {
-	ID    string            // canonical internal user ID
-	Roles []string          // coarse-grained roles (optional)
-	Attrs map[string]string // extensible attributes (org, tier, tier_level, etc)
+	ID    string            `json:"id"`              // canonical internal subject ID
+	Roles []string          `json:"roles,omitempty"` // coarse-grained roles, owned by the application
+	Attrs map[string]string `json:"attrs,omitempty"` // extensible attributes (org, tier, etc)
+
+	// Disabled subjects cannot log in, and their sessions stop refreshing.
+	Disabled bool `json:"-"`
 }
 
 // AuthResult is returned after a successful authentication.
 // It contains both tokens and the resolved subject.
 type AuthResult struct {
-	AccessToken  string
-	RefreshToken string
-	Subject      Subject
+	AccessToken  string  `json:"access_token"`
+	RefreshToken string  `json:"refresh_token"`
+	Subject      Subject `json:"subject"`
 }
 
 // Service defines the IAM capability exposed to the application.
@@ -90,6 +97,18 @@ type Service interface {
 	Revoke(
 		ctx context.Context,
 		refreshToken string,
+	) error
+
+	// LinkIdentity authenticates req and links the resulting provider
+	// identity to an existing subject, so the subject can later log in
+	// through that provider too.
+	//
+	// It fails with ErrIdentityLinked if the identity already belongs to a
+	// different subject.
+	LinkIdentity(
+		ctx context.Context,
+		subjectID string,
+		req AuthRequest,
 	) error
 }
 

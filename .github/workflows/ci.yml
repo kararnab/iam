@@ -33,6 +33,8 @@ jobs:
         with:
           go-version: "1.27.x"
           cache-dependency-path: "**/go.sum"
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: staticcheck
         run: ./scripts/each-module.sh go run honnef.co/go/tools/cmd/staticcheck@latest ./...
       - name: govulncheck

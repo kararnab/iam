@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,14 +17,14 @@ import (
 	"github.com/kararnab/iam/examples/demo/internal/api"
 	"github.com/kararnab/iam/examples/demo/internal/books"
 	"github.com/kararnab/iam/examples/demo/internal/secrets"
-	"github.com/kararnab/iam/examples/demo/internal/users"
 
 	"github.com/kararnab/iam"
+	"github.com/kararnab/iam/memstore"
 	googleprov "github.com/kararnab/iam/oidc/google"
 	"github.com/kararnab/iam/paseto"
+	"github.com/kararnab/iam/password"
 	"github.com/kararnab/iam/policy"
 	"github.com/kararnab/iam/provider"
-	internalprov "github.com/kararnab/iam/provider/inhouse"
 	"github.com/kararnab/iam/service"
 	"github.com/kararnab/iam/session"
 	"github.com/kararnab/iam/token"
@@ -75,7 +75,7 @@ func main() {
 	// -------------------------------
 	// IAM + infra wiring
 	// -------------------------------
-	iamService, userStore, keyProvider, err := buildIAMService(iamMetrics, *dev)
+	deps, err := buildIAMService(iamMetrics, *dev)
 	if err != nil {
 		slog.Error("failed to start IAM", "error", err)
 		os.Exit(1)
@@ -84,10 +84,10 @@ func main() {
 	// -------------------------------
 	// HTTP API
 	// -------------------------------
-	authHandlers := api.NewHandlers(iamService, userStore)
+	authHandlers := api.NewHandlers(deps.iam, deps.users, deps.passwords)
 	bookStore := books.NewMemoryStore()
 	bookHandlers := api.NewBookHandlers(bookStore)
-	keyRotationHandler := api.NewKeyRotationHandler(keyProvider)
+	keyRotationHandler := api.NewKeyRotationHandler(deps.keys)
 	metricsHandler := promhttp.HandlerFor(
 		registry,
 		promhttp.HandlerOpts{},
@@ -136,15 +136,18 @@ func newServer(addr string, h http.Handler) *http.Server {
 // ================================
 //
 
+// demoDeps is everything main needs from the IAM wiring.
+type demoDeps struct {
+	iam       iam.Service
+	users     *memstore.Users
+	passwords *password.Provider
+	keys      *keys.MemoryProvider
+}
+
 func buildIAMService(
 	iamMetrics metrics.IAMMetrics,
 	dev bool,
-) (
-	iam.Service,
-	internalprov.UserStore,
-	*keys.MemoryProvider,
-	error,
-) {
+) (*demoDeps, error) {
 
 	ctx := context.Background()
 
@@ -160,34 +163,42 @@ func buildIAMService(
 	// -------------------------------
 	// User store (application-owned)
 	// -------------------------------
-	userStore := users.NewMemoryUserStore()
+	userStore := memstore.NewUsers()
 
-	hash, err := bcrypt.GenerateFromPassword(
-		[]byte(secretUserPassword),
-		bcrypt.DefaultCost,
-	)
+	hasher, err := password.NewArgon2id(password.DefaultParams, 0)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
+	}
+	passwordProvider, err := password.NewProvider(userStore, hasher, password.DefaultPolicy)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := userStore.Create(ctx, &internalprov.User{
-		ID:           secretUserId,
-		Email:        secretUserName,
-		PasswordHash: string(hash),
-		Roles:        []string{policy.Admin},
+	// Seed the admin with a legacy bcrypt hash: the first login migrates it
+	// to argon2id transparently.
+	legacyHash, err := bcrypt.GenerateFromPassword([]byte(secretUserPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	adminLogin := password.NormalizeLogin(secretUserName)
+	userStore.PutSubject(iam.Subject{ID: secretUserId, Roles: []string{policy.Admin}})
+	if err := userStore.CreateCredential(ctx, adminLogin, string(legacyHash)); err != nil {
+		return nil, err
+	}
+	if err := userStore.LinkIdentity(ctx, secretUserId, provider.Identity{
+		Provider: password.ProviderName, ProviderID: adminLogin,
 	}); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// -------------------------------
 	// Providers
 	// -------------------------------
-	internalProvider := internalprov.New(userStore)
 	googleProvider := googleprov.New(googleOAuthClientID)
 	//or oidcProvider, _ := oidcprov.New(ctx, "https://accounts.google.com", googleOAuthClientID)
 
 	providers := map[string]provider.AuthProvider{
-		internalProvider.Name(): internalProvider,
+		passwordProvider.Name(): passwordProvider,
 		googleProvider.Name():   googleProvider,
 	}
 
@@ -212,14 +223,14 @@ func buildIAMService(
 	if secretPasetoSigningKey != "" {
 		rawKey, err := base64.StdEncoding.DecodeString(secretPasetoSigningKey)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("invalid SECRET_PASETO_SIGNING_KEY: %w", err)
+			return nil, fmt.Errorf("invalid SECRET_PASETO_SIGNING_KEY: %w", err)
 		}
 
 		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "paseto-1", Secret: rawKey})
 
 		issuer, err = paseto.NewIssuer(keyProvider, tokenIssuer, accessTTL)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		verifier = paseto.NewVerifier(keyProvider, tokenIssuer)
 
@@ -229,17 +240,17 @@ func buildIAMService(
 		// ================================
 		signingKey, err := loadSigningKey(secretSigningKey, dev)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 
 		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "jwt-1", Alg: keys.HS256, Secret: signingKey})
 
 		cfg := jwt.Config{Issuer: tokenIssuer, Audience: tokenAudience, TTL: accessTTL}
 		if issuer, err = jwt.NewIssuer(keyProvider, cfg); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 		if verifier, err = jwt.NewVerifier(keyProvider, cfg); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 	}
 
@@ -248,6 +259,7 @@ func buildIAMService(
 	// -------------------------------
 	iamService, err := service.New(service.Options{
 		Providers:      providers,
+		Users:          userStore,
 		SessionManager: sessionManager,
 		SessionStore:   sessionStore,
 		TokenIssuer:    issuer,
@@ -257,10 +269,10 @@ func buildIAMService(
 		Metrics:        iamMetrics,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
-	return iamService, userStore, keyProvider, nil
+	return &demoDeps{iam: iamService, users: userStore, passwords: passwordProvider, keys: keyProvider}, nil
 }
 
 // loadSigningKey decodes IAM_SIGNING_KEY (standard base64, at least 32 bytes).

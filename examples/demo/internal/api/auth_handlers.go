@@ -1,13 +1,12 @@
 package api
 
 import (
-	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/kararnab/iam"
-	internalprov "github.com/kararnab/iam/provider/inhouse"
-	"golang.org/x/crypto/bcrypt"
+	"github.com/kararnab/iam/password"
 )
 
 type registerReq struct {
@@ -28,23 +27,30 @@ func (h *Handlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword(
-		[]byte(req.Password),
-		bcrypt.DefaultCost,
-	)
-	if err != nil {
+	ctx := r.Context()
+	params := map[string]string{"username": req.Email, "password": req.Password}
+
+	identity, err := h.Passwords.Register(ctx, params)
+	switch {
+	case errors.Is(err, iam.ErrConflict):
+		http.Error(w, "user already exists", http.StatusConflict)
+		return
+	case errors.Is(err, password.ErrTooShort), errors.Is(err, password.ErrTooLong):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	case err != nil:
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
-	user := &internalprov.User{
-		ID:           rand.Text(),
-		Email:        req.Email,
-		PasswordHash: string(hash),
+	// TODO(P6): sign-up moves into iam.Service.SignUp (invite-only by default).
+	subjectID, err := h.Users.CreateSubject(ctx, *identity, iam.SignupGrant{})
+	if err == nil {
+		err = h.Users.LinkIdentity(ctx, subjectID, *identity)
 	}
-
-	if err := h.UserStore.Create(r.Context(), user); err != nil {
-		http.Error(w, "user already exists", http.StatusConflict)
+	if err != nil {
+		_ = h.Passwords.Unregister(ctx, identity.ProviderID)
+		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
