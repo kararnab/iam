@@ -288,12 +288,14 @@ func TestHashSecret(t *testing.T) {
 		{"padding", good[:42] + "=", false},
 		{"std alphabet", strings.Replace(good, good[:1], "+", 1), false},
 		{"newline", good[:21] + "\n" + good[22:], false},
-		{"non-canonical last char", good[:42] + "B", false},
+		// Only 'A', 'Q', 'g', 'w' end a canonical 32-byte encoding; "B" is valid
+		// only if it already was the last character.
+		{"non-canonical last char", good[:42] + "B", good[42] == 'B'},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := session.HashSecret(tt.in)
-			if (err == nil) != tt.ok && !(tt.name == "non-canonical last char" && good[42] == 'B') {
+			if (err == nil) != tt.ok {
 				t.Fatalf("HashSecret err = %v, want ok=%v", err, tt.ok)
 			}
 		})

@@ -56,7 +56,8 @@ func Migrate(ctx context.Context, db DB) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	// Rollback after Commit is a no-op that returns pgx.ErrTxClosed.
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(migrationLock)); err != nil {
 		return err

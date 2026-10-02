@@ -168,7 +168,7 @@ func (a *Argon2id) NeedsRehash(encoded string) bool {
 	}
 	return p.Memory != a.params.Memory || p.Iterations != a.params.Iterations ||
 		p.Parallelism != a.params.Parallelism || p.KeyLength != a.params.KeyLength ||
-		uint32(len(salt)) != a.params.SaltLength
+		uint32(len(salt)) != a.params.SaltLength //nolint:gosec // G115: decode bounds the salt to maxSaltLength (64)
 }
 
 func isBcrypt(encoded string) bool {
@@ -215,6 +215,7 @@ func decode(encoded string) (Params, []byte, []byte, error) {
 		return p, nil, nil, ErrMalformedHash
 	}
 
+	//nolint:gosec // G115: par <= 255, salt <= 64 and key <= 128 bytes are checked above
 	p = Params{Memory: m, Iterations: t, Parallelism: uint8(par), SaltLength: uint32(len(salt)), KeyLength: uint32(len(key))}
 	return p, salt, key, nil
 }

@@ -132,7 +132,7 @@ func HashSecret(secret string) ([]byte, error) {
 	}
 	for i := 0; i < len(secret); i++ {
 		c := secret[i]
-		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '-' || c == '_') {
+		if !isBase64URL(c) {
 			return nil, ErrInvalid
 		}
 	}
@@ -142,6 +142,11 @@ func HashSecret(secret string) ([]byte, error) {
 	}
 	sum := sha256.Sum256(b)
 	return sum[:], nil
+}
+
+// isBase64URL reports whether c is in the base64url alphabet (RFC 4648 §5).
+func isBase64URL(c byte) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '-' || c == '_'
 }
 
 // newID returns a public session ID (130 random bits, base32).

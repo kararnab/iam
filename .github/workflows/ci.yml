@@ -46,7 +46,26 @@ jobs:
       - name: vet and test every module
         run: ./scripts/each-module.sh sh -c 'go vet ./... && go test -race ./...'
 
-  lint:
+  golangci-lint:
+    name: golangci-lint (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", oidc, paseto, pgstore, redisstore, prometheus, examples/demo]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache-dependency-path: "**/go.sum"
+      # Includes gofmt, goimports, staticcheck, gosec and more; see .golangci.yml.
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          working-directory: ${{ matrix.module }}
+
+  govulncheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +73,5 @@ jobs:
         with:
           go-version: "1.27.x"
           cache-dependency-path: "**/go.sum"
-      - name: gofmt
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: staticcheck
-        run: ./scripts/each-module.sh go run honnef.co/go/tools/cmd/staticcheck@latest ./...
       - name: govulncheck
         run: ./scripts/each-module.sh go run golang.org/x/vuln/cmd/govulncheck@latest ./...

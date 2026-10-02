@@ -234,7 +234,8 @@ func (m *Manager) Get(ctx context.Context, id string) (*Session, error) {
 func (m *Manager) Revoke(ctx context.Context, secret string) (*Session, error) {
 	hash, err := HashSecret(secret)
 	if err != nil {
-		return nil, nil
+		// A malformed token cannot own a session, so there is nothing to end.
+		return nil, nil //nolint:nilerr // logout is idempotent by design
 	}
 	s, _, err := m.store.GetByTokenHash(ctx, hash)
 	if errors.Is(err, ErrNotFound) {

@@ -31,7 +31,7 @@ import (
 
 const (
 	tokenIssuer   = "iam-demo"
-	tokenAudience = "iam-demo-api"
+	tokenAudience = "iam-demo-api" //nolint:gosec // G101: an audience name, not a credential
 	accessTTL     = 10 * time.Minute
 )
 

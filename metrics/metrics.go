@@ -15,7 +15,7 @@ const (
 	RefreshSuccess     Event = "refresh_success"
 	RefreshFailure     Event = "refresh_failure"
 	RefreshReuse       Event = "refresh_reuse"
-	TokenVerifySuccess Event = "token_verify_success"
+	TokenVerifySuccess Event = "token_verify_success" //nolint:gosec // G101: a metric name, not a credential
 	TokenVerifyFailure Event = "token_verify_failure"
 	SessionRevoked     Event = "session_revoked"
 	PolicyDenied       Event = "policy_denied"
