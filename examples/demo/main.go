@@ -1,3 +1,6 @@
+// Command demo is a books API that uses github.com/kararnab/iam the way any
+// application would: cookie sessions for browsers, bearer tokens for API
+// clients, invite-only sign-up, RBAC, throttled logins and audit logs.
 package main
 
 import (
@@ -9,94 +12,44 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/kararnab/iam/audit"
-	"github.com/kararnab/iam/examples/demo/internal/api"
-	"github.com/kararnab/iam/examples/demo/internal/books"
 	"github.com/kararnab/iam/examples/demo/internal/secrets"
-
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/memstore"
-	googleprov "github.com/kararnab/iam/oidc/google"
-	"github.com/kararnab/iam/paseto"
-	"github.com/kararnab/iam/password"
-	"github.com/kararnab/iam/provider"
-	"github.com/kararnab/iam/ratelimit"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/token"
-	"github.com/kararnab/iam/token/jwt"
 	"github.com/kararnab/iam/token/keys"
-
-	"github.com/kararnab/iam/metrics"
-	prom "github.com/kararnab/iam/prometheus"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/crypto/bcrypt"
 )
 
-//
-// ================================
-// CONFIG (MVP CONSTANTS)
-// ================================
-//
-// TODO (prod):
-//   - Move to env/config files
-//   - Secrets via Vault / SSM / KMS
-//
-
+// Demo-only admin credentials, used with -dev when IAM_ADMIN_EMAIL is unset.
+// They are public: never use -dev outside your machine.
 const (
-	tokenIssuer   = "iam-demo"
-	tokenAudience = "iam-demo-api"
-	accessTTL     = 10 * time.Minute
+	devAdminEmail    = "admin@gmail.com"
+	devAdminPassword = "p@$$w0rd1"
 )
 
 func main() {
-	dev := flag.Bool("dev", false, "development mode: generate a random signing key if IAM_SIGNING_KEY is unset")
+	dev := flag.Bool("dev", false, "development mode: plain-HTTP cookies, random signing key if IAM_SIGNING_KEY is unset, demo admin account")
 	flag.Parse()
 
-	// -------------------------------
-	// Logger
-	// -------------------------------
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	slog.Info("starting application")
-
-	// -------------------------------
-	// Metrics
-	// -------------------------------
-	registry := prom.NewRegistry()
-	iamMetrics, err := prom.NewRecorder(registry)
-	if err != nil {
-		slog.Error("failed to register metrics", "error", err)
+	if err := run(*dev); err != nil {
+		slog.Error("demo failed", "error", err)
 		os.Exit(1)
 	}
+}
 
-	// -------------------------------
-	// IAM + infra wiring
-	// -------------------------------
-	deps, err := buildIAMService(iamMetrics, *dev)
+func run(dev bool) error {
+	cfg, err := loadConfig(dev)
 	if err != nil {
-		slog.Error("failed to start IAM", "error", err)
-		os.Exit(1)
+		return err
 	}
-
-	// -------------------------------
-	// HTTP API
-	// -------------------------------
-	authHandlers := api.NewHandlers(deps.iam)
-	bookStore := books.NewMemoryStore()
-	bookHandlers := api.NewBookHandlers(bookStore)
-	keyRotationHandler := api.NewKeyRotationHandler(deps.keys)
-	metricsHandler := promhttp.HandlerFor(
-		registry,
-		promhttp.HandlerOpts{},
-	)
-
-	router := api.NewRouter(authHandlers, bookHandlers, keyRotationHandler)
+	a, err := newApp(cfg)
+	if err != nil {
+		return err
+	}
 
 	// Metrics listen on a separate, loopback-only admin address by default.
 	adminAddr := os.Getenv("ADMIN_ADDR")
@@ -104,7 +57,7 @@ func main() {
 		adminAddr = "127.0.0.1:9090"
 	}
 	adminMux := http.NewServeMux()
-	adminMux.Handle("GET /metrics", metricsHandler)
+	adminMux.Handle("GET /metrics", a.metrics)
 	go func() {
 		slog.Info("admin server running", "addr", adminAddr)
 		if err := newServer(adminAddr, adminMux).ListenAndServe(); err != nil {
@@ -112,12 +65,12 @@ func main() {
 		}
 	}()
 
-	portAddr := ":" + getPort()
-	slog.Info("server running", "addr", portAddr)
-	if err := newServer(portAddr, router).ListenAndServe(); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	port, err := getPort()
+	if err != nil {
+		return err
 	}
+	slog.Info("server running", "addr", ":"+port, "dev", dev)
+	return newServer(":"+port, a.handler).ListenAndServe()
 }
 
 // newServer returns an http.Server with timeouts, so slow clients cannot hold
@@ -133,206 +86,88 @@ func newServer(addr string, h http.Handler) *http.Server {
 	}
 }
 
-//
-// ================================
-// IAM WIRING
-// ================================
-//
-
-// demoDeps is everything main needs from the IAM wiring.
-type demoDeps struct {
-	iam       iam.Service
-	users     *memstore.Users
-	passwords *password.Provider
-	keys      *keys.MemoryProvider
-}
-
-func buildIAMService(
-	iamMetrics metrics.Recorder,
-	dev bool,
-) (*demoDeps, error) {
-
+// loadConfig reads the environment (see .env.example). Outside dev mode it
+// fails closed: no signing key, no start.
+func loadConfig(dev bool) (appConfig, error) {
 	ctx := context.Background()
-
-	// Secret Loader
 	store := secrets.BuildSecretStore()
-	secretUserPassword, _ := store.Get(ctx, "SECRET_USER_PASSWORD")
-	secretUserId, _ := store.Get(ctx, "SECRET_USER_ID")
-	secretUserName, _ := store.Get(ctx, "SECRET_USERNAME")
-	secretSigningKey, _ := store.Get(ctx, "IAM_SIGNING_KEY")
-	secretPasetoSigningKey, _ := store.Get(ctx, "SECRET_PASETO_SIGNING_KEY")
-	googleOAuthClientID, _ := store.Get(ctx, "GOOGLE_OAUTH_CLIENTID")
-
-	// -------------------------------
-	// User store (application-owned)
-	// -------------------------------
-	userStore := memstore.NewUsers()
-
-	hasher, err := password.NewArgon2id(password.DefaultParams, 0)
-	if err != nil {
-		return nil, err
-	}
-	passwordProvider, err := password.NewProvider(userStore, hasher, password.DefaultPolicy)
-	if err != nil {
-		return nil, err
+	get := func(name string) string {
+		v, _ := store.Get(ctx, name)
+		return v
 	}
 
-	// Seed the admin with a legacy bcrypt hash: the first login migrates it
-	// to argon2id transparently.
-	legacyHash, err := bcrypt.GenerateFromPassword([]byte(secretUserPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, err
+	cfg := appConfig{
+		Dev:            dev,
+		AdminEmail:     get("IAM_ADMIN_EMAIL"),
+		AdminPassword:  get("IAM_ADMIN_PASSWORD"),
+		GoogleClientID: get("GOOGLE_OAUTH_CLIENTID"),
+		OpenSignup:     get("IAM_SIGNUP") == "open",
 	}
-	adminLogin := password.NormalizeLogin(secretUserName)
-	userStore.PutSubject(iam.Subject{ID: secretUserId, Roles: []string{api.RoleAdmin}})
-	if err := userStore.CreateCredential(ctx, adminLogin, string(legacyHash)); err != nil {
-		return nil, err
-	}
-	if err := userStore.LinkIdentity(ctx, secretUserId, provider.Identity{
-		Provider: password.ProviderName, ProviderID: adminLogin,
-	}); err != nil {
-		return nil, err
+	if p := get("IAM_TRUSTED_PROXIES"); p != "" {
+		cfg.TrustedProxies = strings.Split(p, ",")
 	}
 
-	// -------------------------------
-	// Providers
-	// -------------------------------
-	googleProvider := googleprov.New(googleOAuthClientID)
-	//or oidcProvider, _ := oidcprov.New(ctx, "https://accounts.google.com", googleOAuthClientID)
-
-	providers := []provider.AuthProvider{passwordProvider, googleProvider}
-
-	// -------------------------------
-	// Tokens + keys
-	// -------------------------------
-	var (
-		issuer      token.Issuer
-		verifier    token.Verifier
-		keyProvider *keys.MemoryProvider
-	)
-
-	if secretPasetoSigningKey != "" {
-		rawKey, err := base64.StdEncoding.DecodeString(secretPasetoSigningKey)
-		if err != nil {
-			return nil, fmt.Errorf("invalid SECRET_PASETO_SIGNING_KEY: %w", err)
-		}
-
-		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "paseto-1", Secret: rawKey})
-
-		issuer, err = paseto.NewIssuer(keyProvider, tokenIssuer, accessTTL)
-		if err != nil {
-			return nil, err
-		}
-		verifier = paseto.NewVerifier(keyProvider, tokenIssuer)
-
-	} else {
-		// ================================
-		// JWT (default)
-		// ================================
-		signingKey, err := loadSigningKey(secretSigningKey, dev)
-		if err != nil {
-			return nil, err
-		}
-
-		keyProvider = keys.NewMemoryProvider(keys.Key{ID: "jwt-1", Alg: keys.HS256, Secret: signingKey})
-
-		cfg := jwt.Config{Issuer: tokenIssuer, Audience: tokenAudience, TTL: accessTTL}
-		if issuer, err = jwt.NewIssuer(keyProvider, cfg); err != nil {
-			return nil, err
-		}
-		if verifier, err = jwt.NewVerifier(keyProvider, cfg); err != nil {
-			return nil, err
-		}
+	var err error
+	if cfg.SigningKey, err = decodeKey("IAM_SIGNING_KEY", get("IAM_SIGNING_KEY"), keys.MinHMACKeySize); err != nil {
+		return cfg, err
+	}
+	if cfg.PasetoKey, err = decodeKey("IAM_PASETO_KEY", get("IAM_PASETO_KEY"), 32); err != nil {
+		return cfg, err
+	}
+	if cfg.CSRFKey, err = decodeKey("IAM_CSRF_KEY", get("IAM_CSRF_KEY"), 32); err != nil {
+		return cfg, err
 	}
 
-	// -------------------------------
-	// IAM service
-	// -------------------------------
-	rbac, err := api.NewPolicy()
-	if err != nil {
-		return nil, err
-	}
-
-	perLogin, err := ratelimit.NewMemory(ratelimit.Config{Threshold: 5})
-	if err != nil {
-		return nil, err
-	}
-	perIP, err := ratelimit.NewMemory(ratelimit.Config{Threshold: 50})
-	if err != nil {
-		return nil, err
-	}
-	rateLimits := iam.RateLimitConfig{PerLogin: perLogin, PerIP: perIP}
-	iamService, err := iam.New(iam.Config{
-		Providers: providers,
-		Users:     userStore,
-		Sessions:  memstore.NewSessions(),
-		// Bearer first: the demo's JSON API uses tokens; cookie endpoints come with httpauth.
-		AllowedModes:  []session.Mode{session.ModeBearer, session.ModeCookie},
-		TokenIssuer:   issuer,
-		TokenVerifier: verifier,
-		Policy:        rbac,
-		Signup:        signupConfig(),
-		RateLimit:     rateLimits,
-		Audit:         audit.NewSlogLogger(nil),
-		Metrics:       iamMetrics,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &demoDeps{iam: iamService, users: userStore, passwords: passwordProvider, keys: keyProvider}, nil
-}
-
-// signupConfig is invite-only by default; IAM_SIGNUP=open switches to open
-// sign-up with the reader role.
-func signupConfig() iam.SignupConfig {
-	if os.Getenv("IAM_SIGNUP") == "open" {
-		return iam.SignupConfig{Policy: invite.Open, DefaultRoles: []string{api.RoleReader}}
-	}
-	return iam.SignupConfig{Policy: invite.InviteOnly, Invites: memstore.NewInvites()}
-}
-
-// loadSigningKey decodes IAM_SIGNING_KEY (standard base64, at least 32 bytes).
-// Without it the demo refuses to start, unless dev is set, in which case a
-// random key is generated (tokens then do not survive a restart).
-func loadSigningKey(b64Key string, dev bool) ([]byte, error) {
-	if b64Key == "" {
+	if len(cfg.SigningKey) == 0 && len(cfg.PasetoKey) == 0 {
 		if !dev {
-			return nil, errors.New("IAM_SIGNING_KEY is not set (generate one with: openssl rand -base64 32), or run with -dev")
+			return cfg, errors.New("IAM_SIGNING_KEY is not set (generate one with: openssl rand -base64 32), or run with -dev")
 		}
 		slog.Warn("IAM_SIGNING_KEY not set; using a random key (dev mode)")
-		key := make([]byte, keys.MinHMACKeySize)
-		_, _ = rand.Read(key)
-		return key, nil
+		cfg.SigningKey = make([]byte, keys.MinHMACKeySize)
+		_, _ = rand.Read(cfg.SigningKey)
 	}
-	key, err := base64.StdEncoding.DecodeString(b64Key)
+	if dev && cfg.AdminEmail == "" {
+		slog.Warn("dev mode: seeding the public demo admin account", "email", devAdminEmail)
+		cfg.AdminEmail, cfg.AdminPassword = devAdminEmail, devAdminPassword
+	}
+	return cfg, nil
+}
+
+// decodeKey decodes an optional standard-base64 key of at least minLen bytes.
+func decodeKey(name, b64 string, minLen int) ([]byte, error) {
+	if b64 == "" {
+		return nil, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid IAM_SIGNING_KEY: %w", err)
+		return nil, fmt.Errorf("invalid %s: %w", name, err)
 	}
-	if len(key) < keys.MinHMACKeySize {
-		return nil, fmt.Errorf("IAM_SIGNING_KEY must decode to at least %d bytes", keys.MinHMACKeySize)
+	if len(key) < minLen {
+		return nil, fmt.Errorf("%s must decode to at least %d bytes", name, minLen)
 	}
 	return key, nil
 }
 
-func getPort() string {
-	const defaultPort = 8080
+func parsePrefixes(cidrs []string) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(cidrs))
+	for _, c := range cidrs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
+			return nil, fmt.Errorf("invalid IAM_TRUSTED_PROXIES entry %q: %w", c, err)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
 
+func getPort() (string, error) {
 	raw := os.Getenv("PORT")
 	if raw == "" {
-		return fmt.Sprintf("%d", defaultPort)
+		return "8080", nil
 	}
-
 	port, err := strconv.Atoi(raw)
-	if err != nil {
-		slog.Error("invalid PORT (not a number)", "PORT", raw)
-		os.Exit(1)
+	if err != nil || port < 1 || port > 65535 {
+		return "", fmt.Errorf("invalid PORT %q", raw)
 	}
-
-	if port < 1 || port > 65535 {
-		slog.Error("invalid PORT (out of range)", "PORT", raw)
-		os.Exit(1)
-	}
-
-	return raw
+	return raw, nil
 }
