@@ -1,0 +1,38 @@
+name: fuzz
+
+# Longer fuzzing runs than CI. Failing inputs are uploaded as artifacts;
+# commit them under testdata/fuzz to turn them into regression tests.
+on:
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: ".", pkg: "./token/jwt", target: FuzzVerify }
+          - { dir: ".", pkg: "./password", target: FuzzDecode }
+          - { dir: ".", pkg: "./session", target: FuzzHashSecret }
+          - { dir: ".", pkg: "./httpauth", target: FuzzSessionCookie }
+          - { dir: "paseto", pkg: ".", target: FuzzVerify }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.x"
+          cache-dependency-path: "**/go.sum"
+      - name: fuzz ${{ matrix.target }}
+        working-directory: ${{ matrix.dir }}
+        run: go test ${{ matrix.pkg }} -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 5m
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: "**/testdata/fuzz/**"

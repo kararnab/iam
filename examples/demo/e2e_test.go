@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -15,13 +19,20 @@ const (
 	adminPW    = "admin-test-password"
 )
 
+// newTestServer runs the demo in memory, or on PostgreSQL when
+// IAM_TEST_POSTGRES_DSN is set (tables are reset per test).
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	dsn := os.Getenv("IAM_TEST_POSTGRES_DSN")
+	if dsn != "" {
+		resetDatabase(t, dsn)
+	}
 	a, err := newApp(appConfig{
 		Dev:           true,
 		SigningKey:    bytes.Repeat([]byte("k"), 32),
 		AdminEmail:    adminEmail,
 		AdminPassword: adminPW,
+		DatabaseURL:   dsn,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -29,6 +40,19 @@ func newTestServer(t *testing.T) *httptest.Server {
 	srv := httptest.NewServer(a.handler)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func resetDatabase(t *testing.T, dsn string) {
+	t.Helper()
+	conn, err := pgx.Connect(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	if _, err := conn.Exec(context.Background(), `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
+		iam_identities, iam_credentials, iam_subjects, iam_schema_migrations CASCADE`); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // client is a tiny JSON client that remembers cookies, a CSRF token and a

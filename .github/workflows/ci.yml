@@ -16,6 +16,27 @@ jobs:
       fail-fast: false
       matrix:
         go: ["1.26.x", "1.27.x"]
+    # Integration tests (pgstore, redisstore, demo end-to-end on PostgreSQL)
+    # run against these; locally they are skipped unless the variables are set.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: iamtest
+          POSTGRES_DB: iamtest
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      IAM_TEST_POSTGRES_DSN: postgres://postgres:iamtest@localhost:5432/iamtest?sslmode=disable
+      IAM_TEST_REDIS_ADDR: localhost:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

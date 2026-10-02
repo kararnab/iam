@@ -17,8 +17,7 @@ import (
 	"github.com/kararnab/iam/examples/demo/internal/books"
 	"github.com/kararnab/iam/httpauth"
 	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/memstore"
-	"github.com/kararnab/iam/oidc/google"
+	"github.com/kararnab/iam/oidc"
 	"github.com/kararnab/iam/paseto"
 	"github.com/kararnab/iam/password"
 	prom "github.com/kararnab/iam/prometheus"
@@ -48,6 +47,7 @@ type appConfig struct {
 	AdminPassword string
 
 	GoogleClientID string // optional: enable Google sign-in
+	DatabaseURL    string // optional: PostgreSQL instead of in-memory stores
 	OpenSignup     bool   // default is invite-only
 
 	TrustedProxies []string // CIDRs whose X-Forwarded-For is trusted
@@ -74,7 +74,11 @@ func newApp(cfg appConfig) (*app, error) {
 	// -------------------------------
 	// Users (application-owned) and providers
 	// -------------------------------
-	users := memstore.NewUsers()
+	st, err := newStores(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	users := st.users
 	hasher, err := password.NewArgon2id(password.DefaultParams, 0)
 	if err != nil {
 		return nil, err
@@ -85,11 +89,15 @@ func newApp(cfg appConfig) (*app, error) {
 	}
 	providers := []provider.AuthProvider{passwords}
 	if cfg.GoogleClientID != "" {
-		providers = append(providers, google.New(cfg.GoogleClientID))
+		g, err := oidc.NewGoogle(ctx, cfg.GoogleClientID)
+		if err != nil {
+			return nil, err
+		}
+		providers = append(providers, g)
 	}
 
 	if cfg.AdminEmail != "" {
-		if err := seedAdmin(ctx, users, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		if err := seedAdmin(ctx, st, cfg.AdminEmail, cfg.AdminPassword); err != nil {
 			return nil, err
 		}
 	} else {
@@ -111,7 +119,7 @@ func newApp(cfg appConfig) (*app, error) {
 	if err != nil {
 		return nil, err
 	}
-	signup := iam.SignupConfig{Policy: invite.InviteOnly, Invites: memstore.NewInvites()}
+	signup := iam.SignupConfig{Policy: invite.InviteOnly, Invites: st.invites}
 	if cfg.OpenSignup {
 		signup = iam.SignupConfig{Policy: invite.Open, DefaultRoles: []string{api.RoleReader}}
 	}
@@ -130,7 +138,7 @@ func newApp(cfg appConfig) (*app, error) {
 	svc, err := iam.New(iam.Config{
 		Providers:     providers,
 		Users:         users,
-		Sessions:      memstore.NewSessions(),
+		Sessions:      st.sessions,
 		AllowedModes:  []session.Mode{session.ModeCookie, session.ModeBearer},
 		TokenIssuer:   issuer,
 		TokenVerifier: verifier,
@@ -175,32 +183,42 @@ func newApp(cfg appConfig) (*app, error) {
 }
 
 // seedAdmin creates an admin with a legacy bcrypt hash: the first login
-// migrates it to argon2id transparently.
-func seedAdmin(ctx context.Context, users *memstore.Users, email, pw string) error {
+// migrates it to argon2id transparently. An existing login is left alone.
+func seedAdmin(ctx context.Context, st *stores, email, pw string) error {
 	if pw == "" {
 		return errors.New("IAM_ADMIN_PASSWORD is required with IAM_ADMIN_EMAIL")
+	}
+	login := password.NormalizeLogin(email)
+	if _, err := st.users.GetCredential(ctx, login); err == nil {
+		return nil
 	}
 	legacyHash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	login := password.NormalizeLogin(email)
 	id := "admin-" + rand.Text()[:8]
-	users.PutSubject(iam.Subject{ID: id, Roles: []string{api.RoleAdmin}})
-	if err := users.CreateCredential(ctx, login, string(legacyHash)); err != nil {
+	if err := st.putSubject(ctx, iam.Subject{ID: id, Roles: []string{api.RoleAdmin}}); err != nil {
 		return err
 	}
-	return users.LinkIdentity(ctx, id, provider.Identity{Provider: password.ProviderName, ProviderID: login})
+	if err := st.users.CreateCredential(ctx, login, string(legacyHash)); err != nil {
+		return err
+	}
+	return st.users.LinkIdentity(ctx, id, provider.Identity{Provider: password.ProviderName, ProviderID: login})
 }
 
 func buildTokens(cfg appConfig) (token.Issuer, token.Verifier, *keys.MemoryProvider, error) {
 	if len(cfg.PasetoKey) > 0 {
-		kp := keys.NewMemoryProvider(keys.Key{ID: "paseto-1", Secret: cfg.PasetoKey})
-		iss, err := paseto.NewIssuer(kp, tokenIssuer, accessTTL)
+		kp := keys.NewMemoryProvider(keys.Key{ID: "paseto-1", Alg: paseto.V4Local, Secret: cfg.PasetoKey})
+		pc := paseto.Config{Issuer: tokenIssuer, Audience: tokenAudience, TTL: accessTTL}
+		iss, err := paseto.NewIssuer(kp, pc)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		return iss, paseto.NewVerifier(kp, tokenIssuer), kp, nil
+		ver, err := paseto.NewVerifier(kp, pc)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return iss, ver, kp, nil
 	}
 
 	if len(cfg.SigningKey) < keys.MinHMACKeySize {

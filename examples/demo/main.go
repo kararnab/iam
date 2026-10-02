@@ -101,6 +101,7 @@ func loadConfig(dev bool) (appConfig, error) {
 		AdminEmail:     get("IAM_ADMIN_EMAIL"),
 		AdminPassword:  get("IAM_ADMIN_PASSWORD"),
 		GoogleClientID: get("GOOGLE_OAUTH_CLIENTID"),
+		DatabaseURL:    get("IAM_DATABASE_URL"),
 		OpenSignup:     get("IAM_SIGNUP") == "open",
 	}
 	if p := get("IAM_TRUSTED_PROXIES"); p != "" {
