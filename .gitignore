@@ -22,3 +22,8 @@ go.work
 
 # Intellij Idea
 .idea
+
+# Local environment (secrets)
+.env
+.env.*
+!.env.example

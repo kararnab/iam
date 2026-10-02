@@ -1,0 +1,45 @@
+module github.com/kararnab/iam/examples/demo
+
+go 1.26.0
+
+require (
+	github.com/jackc/pgx/v5 v5.11.0
+	github.com/kararnab/iam v0.0.0
+	github.com/kararnab/iam/oidc v0.0.0
+	github.com/kararnab/iam/paseto v0.0.0
+	github.com/kararnab/iam/pgstore v0.0.0-00010101000000-000000000000
+	github.com/kararnab/iam/prometheus v0.0.0
+	github.com/prometheus/client_golang v1.24.1
+	golang.org/x/crypto v0.57.0
+)
+
+require (
+	aidanwoods.dev/go-paseto v1.6.0 // indirect
+	aidanwoods.dev/go-result v0.3.1 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coreos/go-oidc/v3 v3.21.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
+)
+
+replace (
+	github.com/kararnab/iam => ../../
+	github.com/kararnab/iam/oidc => ../../oidc
+	github.com/kararnab/iam/paseto => ../../paseto
+	github.com/kararnab/iam/pgstore => ../../pgstore
+	github.com/kararnab/iam/prometheus => ../../prometheus
+)
