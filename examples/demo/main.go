@@ -25,7 +25,6 @@ import (
 	"github.com/kararnab/iam/password"
 	"github.com/kararnab/iam/policy"
 	"github.com/kararnab/iam/provider"
-	"github.com/kararnab/iam/service"
 	"github.com/kararnab/iam/session"
 	"github.com/kararnab/iam/token"
 	"github.com/kararnab/iam/token/jwt"
@@ -52,7 +51,6 @@ const (
 	tokenIssuer   = "iam-demo"
 	tokenAudience = "iam-demo-api"
 	accessTTL     = 10 * time.Minute
-	sessionTTL    = 24 * time.Hour
 )
 
 func main() {
@@ -197,19 +195,7 @@ func buildIAMService(
 	googleProvider := googleprov.New(googleOAuthClientID)
 	//or oidcProvider, _ := oidcprov.New(ctx, "https://accounts.google.com", googleOAuthClientID)
 
-	providers := map[string]provider.AuthProvider{
-		passwordProvider.Name(): passwordProvider,
-		googleProvider.Name():   googleProvider,
-	}
-
-	// -------------------------------
-	// Sessions
-	// -------------------------------
-	sessionStore := session.NewMemoryStore()
-	sessionManager := session.NewManager(
-		sessionStore,
-		sessionTTL,
-	)
+	providers := []provider.AuthProvider{passwordProvider, googleProvider}
 
 	// -------------------------------
 	// Tokens + keys
@@ -257,16 +243,17 @@ func buildIAMService(
 	// -------------------------------
 	// IAM service
 	// -------------------------------
-	iamService, err := service.New(service.Options{
-		Providers:      providers,
-		Users:          userStore,
-		SessionManager: sessionManager,
-		SessionStore:   sessionStore,
-		TokenIssuer:    issuer,
-		TokenVerifier:  verifier,
-		PolicyEngine:   &policy.DefaultPolicy{},
-		AuditLogger:    audit.NewSlogLogger(nil),
-		Metrics:        iamMetrics,
+	iamService, err := iam.New(iam.Config{
+		Providers: providers,
+		Users:     userStore,
+		Sessions:  memstore.NewSessions(),
+		// Bearer first: the demo's JSON API uses tokens; cookie endpoints come with httpauth.
+		AllowedModes:  []session.Mode{session.ModeBearer, session.ModeCookie},
+		TokenIssuer:   issuer,
+		TokenVerifier: verifier,
+		Policy:        &policy.DefaultPolicy{},
+		Audit:         audit.NewSlogLogger(nil),
+		Metrics:       iamMetrics,
 	})
 	if err != nil {
 		return nil, err

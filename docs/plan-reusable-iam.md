@@ -287,13 +287,13 @@ type Service interface {
     SignUp(ctx, SignUpRequest) (*LoginResult, error)
     Refresh(ctx, refreshToken string, c ClientInfo) (*TokenPair, error)
     ValidateSession(ctx, sessionToken string) (*Subject, *SessionInfo, error)   // cookie mode
-    VerifyAccessToken(ctx, accessToken string) (*Subject, error)               // bearer mode
+    VerifyAccessToken(ctx, accessToken string) (*Subject, *SessionInfo, error) // bearer mode; session ID from "sid"
     Authorize(ctx, *Subject, policy.Action, policy.Resource) (*policy.Decision, error)
     Logout(ctx, sessionOrRefreshToken string) error               // was Revoke
     RotateSession(ctx, sessionToken string) (*LoginResult, error)
     ListSessions(ctx, subjectID string) ([]SessionInfo, error)
     RevokeSession(ctx, subjectID, sessionID string) error
-    RevokeAllSessions(ctx, subjectID string, exceptSessionID string) error     // "log out everywhere"
+    RevokeAllSessions(ctx, subjectID string, exceptSessionID string) (int, error) // "log out everywhere"
     CreateInvite(ctx, InviteRequest) (*IssuedInvite, error)
     LinkIdentity(ctx, subjectID string, req AuthRequest) error
 }

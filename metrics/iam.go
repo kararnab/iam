@@ -19,3 +19,18 @@ type IAMMetrics interface {
 
 	PolicyDenied()
 }
+
+// Noop discards all metrics. It is the default when none are configured.
+type Noop struct{}
+
+var _ IAMMetrics = Noop{}
+
+func (Noop) AuthSuccess()          {}
+func (Noop) AuthFailure()          {}
+func (Noop) TokenVerifySuccess()   {}
+func (Noop) TokenVerifyFailure()   {}
+func (Noop) TokenRefreshSuccess()  {}
+func (Noop) TokenRefreshFailure()  {}
+func (Noop) SessionRevokeSuccess() {}
+func (Noop) SessionRevokeFailure() {}
+func (Noop) PolicyDenied()         {}

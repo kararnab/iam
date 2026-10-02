@@ -25,7 +25,7 @@ func AuthMiddleware(iamSvc iam.Service) func(http.Handler) http.Handler {
 
 			token := strings.TrimPrefix(auth, "Bearer ")
 
-			subject, err := iamSvc.VerifyAccessToken(r.Context(), token)
+			subject, _, err := iamSvc.VerifyAccessToken(r.Context(), token)
 			if err != nil {
 				http.Error(w, "invalid token", http.StatusUnauthorized)
 				return

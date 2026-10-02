@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 
 	"github.com/kararnab/iam"
 	"github.com/kararnab/iam/password"
+	"github.com/kararnab/iam/session"
 )
 
 type registerReq struct {
@@ -64,6 +66,14 @@ type loginReq struct {
 	Params   map[string]string `json:"params"`
 }
 
+func clientInfo(r *http.Request) iam.ClientInfo {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return iam.ClientInfo{IP: host, UserAgent: r.UserAgent()}
+}
+
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 
@@ -77,9 +87,11 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := h.IAM.Authenticate(r.Context(), iam.AuthRequest{
+	res, err := h.IAM.Login(r.Context(), iam.AuthRequest{
 		Provider: req.Provider,
 		Params:   req.Params,
+		Mode:     session.ModeBearer,
+		Client:   clientInfo(r),
 	})
 	if err != nil {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
@@ -89,12 +101,12 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
-type logoutReq struct {
+type tokenReq struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
-	var req logoutReq
+	var req tokenReq
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -106,8 +118,8 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.IAM.Revoke(r.Context(), req.RefreshToken); err != nil {
-		http.Error(w, "invalid refresh token", http.StatusUnauthorized)
+	if err := h.IAM.Logout(r.Context(), req.RefreshToken); err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -116,25 +128,19 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type refreshReq struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 func (h *Handlers) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req refreshReq
+	var req tokenReq
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 
-	token, err := h.IAM.Refresh(r.Context(), req.RefreshToken)
+	pair, err := h.IAM.Refresh(r.Context(), req.RefreshToken, clientInfo(r))
 	if err != nil {
 		http.Error(w, "invalid refresh token", http.StatusUnauthorized)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"access_token": token,
-	})
+	writeJSON(w, http.StatusOK, pair)
 }

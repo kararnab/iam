@@ -31,11 +31,20 @@ func (s *SlogLogger) Log(ctx context.Context, event Event) error {
 		attrs = append(attrs, slog.String(k, v))
 	}
 
-	l.LogAttrs(ctx, slog.LevelInfo, event.Message,
+	level := slog.LevelInfo
+	switch event.Type {
+	case EventRefreshReuse, EventLockout:
+		level = slog.LevelWarn
+	}
+
+	l.LogAttrs(ctx, level, event.Message,
 		slog.String("log_type", "audit"),
 		slog.String("event_type", string(event.Type)),
+		slog.Time("event_time", event.Time),
 		slog.String("subject_id", event.SubjectID),
+		slog.String("session_id", event.SessionID),
 		slog.String("provider", event.Provider),
+		slog.String("client_ip", event.ClientIP),
 		slog.Group("attrs", attrs...),
 	)
 	return nil
