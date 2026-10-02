@@ -18,7 +18,7 @@ import (
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
 
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 // GoogleIssuer is Google's issuer URL.

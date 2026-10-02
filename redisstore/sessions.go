@@ -17,7 +17,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2/session"
 )
 
 // Sessions implements session.Store.

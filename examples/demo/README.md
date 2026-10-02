@@ -1,6 +1,6 @@
 # Demo: books API
 
-A small books API built on [`github.com/kararnab/iam`](../../README.md). It
+A small books API built on [`github.com/kararnab/iam/v2`](../../README.md). It
 imports the library like any consumer and shows:
 
 - cookie sessions for browsers (with CSRF tokens) and bearer tokens for API

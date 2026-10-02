@@ -51,7 +51,7 @@ httpauth.Middleware ── net/http adapter that depends ONLY on iam.Service
 ## Package layout
 
 ```
-github.com/kararnab/iam            Service, Config, New, Subject, store contracts
+github.com/kararnab/iam/v2         Service, Config, New, Subject, store contracts
 ├── provider/                      AuthProvider, Identity, Registrar
 ├── password/                      argon2id/bcrypt Hasher, Policy, password Provider
 ├── session/                       Session, Store, Manager (rotation, reuse detection)

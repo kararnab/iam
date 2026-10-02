@@ -445,12 +445,13 @@ These are not in v0.1. They go into SECURITY.md under "what this library does no
 
 ### Release checklist (needs the owner)
 
-1. Rotate the secret that was committed in `.env` (`JWT_SECRET_KEY`).
-2. Rename the GitHub repository `kararnab/AuthSystemDemo` → `kararnab/iam`, then
-   `git remote set-url origin git@github.com:kararnab/iam.git`.
-3. Push `feature/reusable-iam` and open a PR; let CI run (including PostgreSQL and Redis).
-4. After merging, drop the `replace` directives from the sub-modules' `go.mod`, require
-   `github.com/kararnab/iam v0.1.0`, and tag in order: `v0.1.0` first, then `oidc/v0.1.0`,
-   `paseto/v0.1.0`, `pgstore/v0.1.0`, `redisstore/v0.1.0`, `prometheus/v0.1.0`. The demo keeps its
-   `replace` directives because it is never imported.
-5. Move the CHANGELOG's "Unreleased" section to `v0.1.0` with the release date.
+1. ~~Rotate the secret that was committed in `.env`.~~ Done.
+2. ~~Rename the repository to `kararnab/iam` and update the remote.~~ Done.
+3. ~~Push and merge the library PR (#2).~~ Done.
+4. **Version decision (2026-10-02):** the first release is **v2.0.0** for all six modules, because the
+   repository already had `v1.0-nodejs` and `v1.1-golang` tags. Go requires `/v2` module paths for this:
+   `github.com/kararnab/iam/v2` and `github.com/kararnab/iam/<module>/v2`. These are on the
+   `release/v2.0.0` branch. The sub-modules keep `replace ../` directives (Go ignores them in
+   dependencies), so all six tags go on the same commit.
+5. Merge `release/v2.0.0`, then tag the merge commit on `master` with `v2.0.0`, `oidc/v2.0.0`,
+   `paseto/v2.0.0`, `pgstore/v2.0.0`, `redisstore/v2.0.0` and `prometheus/v2.0.0`, and push the tags.

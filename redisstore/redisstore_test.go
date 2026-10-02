@@ -9,9 +9,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/kararnab/iam/ratelimit"
-	"github.com/kararnab/iam/session"
-	"github.com/kararnab/iam/storetest"
+	"github.com/kararnab/iam/v2/ratelimit"
+	"github.com/kararnab/iam/v2/session"
+	"github.com/kararnab/iam/v2/storetest"
 )
 
 // newClient connects to IAM_TEST_REDIS_ADDR. Without it the tests are

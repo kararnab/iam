@@ -1,6 +1,6 @@
 package api
 
-import "github.com/kararnab/iam/policy"
+import "github.com/kararnab/iam/v2/policy"
 
 // Demo roles, actions and resource types.
 const (

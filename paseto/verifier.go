@@ -8,8 +8,8 @@ import (
 
 	pasetolib "aidanwoods.dev/go-paseto"
 
-	"github.com/kararnab/iam/token"
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2/token"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 // Verifier implements token.Verifier for v4.local and v4.public tokens.

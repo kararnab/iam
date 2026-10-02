@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kararnab/iam/invite"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/session"
 )
 
 func TestInvites(t *testing.T) {

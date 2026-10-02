@@ -3,7 +3,7 @@ info:
   title: iam demo — books API
   version: 0.1.0
   description: |
-    Demo application for github.com/kararnab/iam.
+    Demo application for github.com/kararnab/iam/v2.
 
     Two ways to authenticate:
 

@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/kararnab/iam/metrics"
+	"github.com/kararnab/iam/v2/metrics"
 )
 
 func TestRecorder(t *testing.T) {

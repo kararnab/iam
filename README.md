@@ -21,23 +21,26 @@ keeps owning its users and its business logic.
   so it can later sit behind gRPC or become a remote service.
   `httpauth` adapts it to `net/http`.
 
-> **Status:** pre-release (`v0.x`). The API may change before v1.0.0. See the
+> **Versioning:** the first library release is `v2.0.0`, because this
+> repository's earlier tags (`v1.0-nodejs`, `v1.1-golang`) were the demo
+> application. Go therefore imports it as `github.com/kararnab/iam/v2`. It
+> follows semantic versioning: no breaking changes within v2. See the
 > [changelog](CHANGELOG.md).
 
 ## Modules
 
 | Module | Adds | Dependencies |
 |---|---|---|
-| `github.com/kararnab/iam` | service, sessions, JWT, passwords, policy, invites, rate limiting, `httpauth`, in-memory stores | stdlib, `golang.org/x/crypto` |
-| `github.com/kararnab/iam/oidc` | Google and OpenID Connect sign-in | `coreos/go-oidc` |
-| `github.com/kararnab/iam/paseto` | PASETO v4 access tokens | `aidanwoods.dev/go-paseto` |
-| `github.com/kararnab/iam/pgstore` | PostgreSQL stores and migrations | `jackc/pgx/v5` |
-| `github.com/kararnab/iam/redisstore` | Redis session store and shared rate limiter | `redis/go-redis/v9` |
-| `github.com/kararnab/iam/prometheus` | Prometheus metrics | `prometheus/client_golang` |
+| `github.com/kararnab/iam/v2` | service, sessions, JWT, passwords, policy, invites, rate limiting, `httpauth`, in-memory stores | stdlib, `golang.org/x/crypto` |
+| `github.com/kararnab/iam/oidc/v2` | Google and OpenID Connect sign-in | `coreos/go-oidc` |
+| `github.com/kararnab/iam/paseto/v2` | PASETO v4 access tokens | `aidanwoods.dev/go-paseto` |
+| `github.com/kararnab/iam/pgstore/v2` | PostgreSQL stores and migrations | `jackc/pgx/v5` |
+| `github.com/kararnab/iam/redisstore/v2` | Redis session store and shared rate limiter | `redis/go-redis/v9` |
+| `github.com/kararnab/iam/prometheus/v2` | Prometheus metrics | `prometheus/client_golang` |
 
 ```sh
-go get github.com/kararnab/iam
-go get github.com/kararnab/iam/pgstore   # only what you use
+go get github.com/kararnab/iam/v2
+go get github.com/kararnab/iam/pgstore/v2   # only what you use
 ```
 
 Requires Go 1.26 or later.

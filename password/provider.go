@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 // ProviderName is the provider name used in iam.AuthRequest.Provider.

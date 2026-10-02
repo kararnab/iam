@@ -31,9 +31,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/policy"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/policy"
+	"github.com/kararnab/iam/v2/session"
 )
 
 // CookieConfig configures the session cookie.

@@ -1,4 +1,4 @@
-module github.com/kararnab/iam
+module github.com/kararnab/iam/v2
 
 go 1.26.0
 

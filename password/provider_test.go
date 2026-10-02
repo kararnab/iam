@@ -7,8 +7,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/kararnab/iam"
-	"github.com/kararnab/iam/provider"
+	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/provider"
 )
 
 // creds is a minimal CredentialStore (memstore imports this package).

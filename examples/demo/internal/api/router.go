@@ -3,8 +3,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/kararnab/iam/policy"
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2/policy"
+	"github.com/kararnab/iam/v2/session"
 )
 
 // MaxBodyBytes bounds request bodies.

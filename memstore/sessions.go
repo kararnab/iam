@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kararnab/iam/session"
+	"github.com/kararnab/iam/v2/session"
 )
 
 type hashEntry struct {

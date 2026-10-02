@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kararnab/iam/invite"
+	"github.com/kararnab/iam/v2/invite"
 )
 
 // Invites implements invite.Store.

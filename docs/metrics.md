@@ -18,7 +18,7 @@ not break your implementation.
 
 The default is `metrics.Noop`.
 
-## Prometheus (`github.com/kararnab/iam/prometheus`)
+## Prometheus (`github.com/kararnab/iam/prometheus/v2`)
 
 ```go
 reg := prometheus.NewRegistry()

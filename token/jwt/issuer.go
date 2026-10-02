@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/kararnab/iam/token"
-	"github.com/kararnab/iam/token/keys"
+	"github.com/kararnab/iam/v2/token"
+	"github.com/kararnab/iam/v2/token/keys"
 )
 
 // Issuer issues JWT access tokens signed with the provider's active key.
