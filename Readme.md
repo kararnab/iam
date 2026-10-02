@@ -17,49 +17,40 @@ This version replaces the earlier Node.js implementation (See tag: `v1.0-nodejs`
 
 ---
 
-## API Documentation
-- Hoppscotch collection: `docs/AuthDemo_Hoppscotch_Import.json`
-- OpenAPI spec: `docs/openapi-specs.yaml`
+> **Work in progress:** this repository is being turned into the importable
+> library `github.com/kararnab/iam`. See `docs/plan-reusable-iam.md`.
+> The demo app now lives in `examples/demo`.
 
-### Swagger UI
-Run this command to see the specs in [Swagger UI](http://localhost:8081)
-```shell
-docker run -p 8081:8080 -e SWAGGER_JSON=/docs/openapi-specs.yaml -v ./docs/openapi-specs.yaml:/docs/openapi-specs.yaml swaggerapi/swagger-ui
-```
+## API Documentation
+- Hoppscotch collection: `examples/demo/hoppscotch.json`
+- OpenAPI spec: `examples/demo/openapi.yaml`
 
 ## Requirements
 
-- Go 1.25+ (for local development)
-- Docker (recommended)
+- Go 1.26+
+- Docker (optional)
 
----
-
-## Running locally (without Docker)
+## Running the demo locally
 
 ```bash
-go mod download
-go run ./cmd/server
+cd examples/demo
+go run .
 ```
 
-## Running with Docker (recommended)
-Follow the documentation as given in https://nodejs.org/en/docs/guides/nodejs-docker-webapp/
+The API listens on `:8080` (`PORT`). Prometheus metrics are served on
+`127.0.0.1:9090/metrics` (`ADMIN_ADDR`), not on the public port.
 
- + Install docker application (https://www.docker.com/products/docker-desktop)
- + Create the Dockerfile and place it in the root of the project
- + `docker build . -t <your username>/auth-demo-go`
- + To see your images created by the previous step run `docker images`
+## Running the demo with Docker
 
- This will show like the following
+```bash
+docker build -f examples/demo/Dockerfile -t kararnab/iam-demo .
+docker run -p 8080:8080 --env-file .env kararnab/iam-demo
+```
 
-|      REPOSITORY       |  TAG   |   IMAGE ID   |    CREATED    |  SIZE   |
-|:---------------------:|:------:|:------------:|:-------------:|:-------:|
-| kararnab/auth-demo-go | latest | c93113ff6c5c | 4 minutes ago | 66.77MB |
+Copy `.env.example` to `.env` first.
 
-+ Run the docker image created using the following cmd
-+ `docker run -p 49160:8080 -d --env-file .env <your username>/auth-demo-go`
-+ Open the browser link http://localhost:49160
+## Tests
 
-OR 
-+ `docker run --publish 8080:8080 kararnab/role_auth_1.0`
-+ Open the browser link http://localhost:8080
-
+```bash
+./scripts/each-module.sh go test -race ./...
+```
