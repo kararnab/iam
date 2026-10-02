@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/kararnab/iam/v2.svg)](https://pkg.go.dev/github.com/kararnab/iam/v2)
 [![CI](https://github.com/kararnab/iam/actions/workflows/ci.yml/badge.svg)](https://github.com/kararnab/iam/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kararnab/iam/v2)](https://goreportcard.com/report/github.com/kararnab/iam/v2)
+[![Go version](https://img.shields.io/github/go-mod/go-version/kararnab/iam)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Logins, sessions, JWT, RBAC and invites for Go web apps and APIs, with
