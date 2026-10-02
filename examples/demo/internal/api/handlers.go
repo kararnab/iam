@@ -14,7 +14,7 @@ import (
 	"github.com/kararnab/iam/v2/session"
 )
 
-// Handlers exposes authentication endpoints in two flavours:
+// Handlers exposes authentication endpoints in two flavors:
 //
 //   - /api/login, /api/refresh, /api/logout, /api/register: bearer tokens
 //     in JSON, for API and mobile clients;

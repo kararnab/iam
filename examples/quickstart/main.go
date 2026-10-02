@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/kararnab/iam/v2"
 	"github.com/kararnab/iam/v2/httpauth"
@@ -140,6 +141,16 @@ func main() {
 	if addr == "" {
 		addr = "localhost:8080"
 	}
-	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, auth.Protect(mux)))
+	log.Printf("listening on %s", addr) //nolint:gosec // G706: ADDR is set by the operator
+
+	// Timeouts stop slow clients from holding connections open.
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           auth.Protect(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }

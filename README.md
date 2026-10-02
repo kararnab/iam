@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/kararnab/iam/v2.svg)](https://pkg.go.dev/github.com/kararnab/iam/v2)
 [![CI](https://github.com/kararnab/iam/actions/workflows/ci.yml/badge.svg)](https://github.com/kararnab/iam/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kararnab/iam/v2)](https://goreportcard.com/report/github.com/kararnab/iam/v2)
+[![Go version](https://img.shields.io/github/go-mod/go-version/kararnab/iam)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Logins, sessions, JWT, RBAC and invites for Go web apps and APIs, with
@@ -88,8 +88,8 @@ If you need password reset, MFA or passkeys today, see the
   JWT, PASETO, session cookies, password hashes. They run weekly in CI.
 - A [store conformance suite](storetest) that the memory, PostgreSQL and
   Redis stores all pass, including concurrent-rotation races.
-- `go test -race`, `staticcheck` and `govulncheck` on every module, with
-  Go 1.26 and 1.27.
+- `go test -race`, [golangci-lint](.golangci.yml) (including `gosec` and
+  `staticcheck`) and `govulncheck` on every module, with Go 1.26 and 1.27.
 - End-to-end tests of every flow in the [demo app](examples/demo), on
   PostgreSQL.
 
@@ -191,7 +191,8 @@ mux.Handle("GET /notes", auth.RequirePermission("read", "note", nil)(notesHandle
 inv, _ := svc.CreateInvite(ctx, iam.InviteRequest{Roles: []string{"member"}})
 log.Printf("invite token: %s", inv.Token)
 
-http.ListenAndServe("localhost:8080", auth.Protect(mux))
+srv := &http.Server{Addr: "localhost:8080", Handler: auth.Protect(mux), ReadHeaderTimeout: 5 * time.Second}
+log.Fatal(srv.ListenAndServe())
 ```
 
 **5. Try it.**
@@ -297,7 +298,8 @@ before large changes. Report security problems privately as described in
 [SECURITY.md](SECURITY.md).
 
 ```sh
-./scripts/each-module.sh go test -race ./...     # every module
+./scripts/each-module.sh go test -race ./...         # every module
+./scripts/each-module.sh golangci-lint run ./...    # lint (config: .golangci.yml)
 
 # Integration tests for pgstore, redisstore and the demo on PostgreSQL:
 export IAM_TEST_POSTGRES_DSN='postgres://postgres:pw@localhost:5432/iamtest?sslmode=disable'

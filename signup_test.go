@@ -131,7 +131,7 @@ func TestInviteValidation(t *testing.T) {
 				tok = tt.token(tok)
 			}
 			pw := newPW
-			if tt.wantErr == password.ErrTooShort {
+			if errors.Is(tt.wantErr, password.ErrTooShort) {
 				pw = "short"
 			}
 			_, err = f.svc.SignUp(ctx, pwSignup(tok, tt.user, pw))

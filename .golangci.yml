@@ -1,0 +1,35 @@
+# golangci-lint v2 configuration, shared by every module in this repository
+# (golangci-lint finds it by walking up from each module directory).
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose    # HTTP response bodies are closed
+    - copyloopvar  # no redundant loop-variable copies
+    - errorlint    # wrapped errors are compared with errors.Is/As
+    - gocritic     # common bugs and style issues
+    - gosec        # security problems (this is an auth library)
+    - misspell
+    - nilerr       # returning nil after checking err != nil
+    - unconvert    # unnecessary conversions
+  settings:
+    misspell:
+      locale: US
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Tests deliberately ignore errors and use fixed secrets.
+      - path: _test\.go
+        linters: [errcheck, gosec]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/kararnab/iam

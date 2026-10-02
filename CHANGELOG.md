@@ -8,6 +8,23 @@ Each module is tagged separately and the versions move together: `v2.0.0`
 for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
 `redisstore/v2.0.0` and `prometheus/v2.0.0` for the sub-modules.
 
+## [Unreleased]
+
+### Changed
+
+- CI lints every module with golangci-lint (`.golangci.yml`: the standard
+  set plus gosec, errorlint, gocritic, bodyclose, nilerr, misspell,
+  unconvert, copyloopvar; gofmt and goimports). It replaces the separate
+  gofmt and staticcheck steps.
+- The quickstart example sets server timeouts.
+- README: replaced the Go Report Card badge (service shut down) with a
+  Go version badge.
+
+### Fixed
+
+- pgstore: the deferred rollback in `Migrate` no longer drops its error
+  unchecked.
+
 ## [2.0.0] — 2026-10-02
 
 First release as a reusable library, extracted from the AuthSystemDemo

@@ -456,6 +456,7 @@ func (m *Middleware) StartSession(w http.ResponseWriter, res *iam.LoginResult) s
 	if res == nil || res.Mode != session.ModeCookie || res.SessionToken == "" {
 		return ""
 	}
+	//nolint:gosec // G124: HttpOnly and SameSite are fixed; Secure is on unless CookieConfig.Insecure
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookie.Name,
 		Value:    res.SessionToken,
@@ -475,6 +476,7 @@ func (m *Middleware) EndSession(w http.ResponseWriter, r *http.Request) error {
 	if tok, ok := m.sessionCookie(r); ok {
 		err = m.svc.Logout(r.Context(), tok)
 	}
+	//nolint:gosec // G124: same attributes as StartSession; this cookie only clears the session
 	http.SetCookie(w, &http.Cookie{
 		Name:     m.cookie.Name,
 		Value:    "",

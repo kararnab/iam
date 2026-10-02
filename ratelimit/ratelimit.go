@@ -1,6 +1,6 @@
 // Package ratelimit throttles repeated failures, such as failed logins.
 //
-// The default behaviour is a growing back-off rather than a hard lockout:
+// The default behavior is a growing back-off rather than a hard lockout:
 // after Threshold failures within Window, the key is blocked for BaseDelay,
 // and each further failure doubles the delay up to MaxDelay. A hard lockout
 // lets anyone lock any user out, so it is left to LockoutHooks.
