@@ -12,6 +12,7 @@ package iam
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/kararnab/iam/v2/policy"
@@ -171,4 +172,10 @@ var (
 	// ErrRefreshRaced is returned when a just-rotated refresh token is
 	// reused within the configured grace window; the session is kept.
 	ErrRefreshRaced = session.ErrRaced
+
+	// ErrUnavailable wraps a store failure while checking a session or a
+	// subject (for example a database timeout). It says nothing about the
+	// credential: the caller should answer "try again" (HTTP 503), not
+	// treat the request as anonymous. The session is left untouched.
+	ErrUnavailable = errors.New("iam: authentication backend unavailable")
 )

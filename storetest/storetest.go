@@ -300,22 +300,47 @@ type UserStore interface {
 	password.CredentialStore
 }
 
+// UsersOptions adapts the Users suite to stores with stricter rules than
+// IAM requires. The zero value is the default suite.
+type UsersOptions struct {
+	// Roles are granted to the first subject the suite creates, and must be
+	// returned by LoadSubject in the same order. Default: editor, reader.
+	// Set it for stores that allow one role per subject, or only known roles.
+	Roles []string
+
+	// DefaultRoles are granted to the second subject (an empty grant by
+	// default). Set it for stores that require at least one role.
+	DefaultRoles []string
+}
+
 // Users runs the iam.UserStore and password.CredentialStore conformance tests.
 func Users(t *testing.T, newStore func(t *testing.T) UserStore) {
+	UsersWith(t, newStore, UsersOptions{})
+}
+
+// UsersWith runs the Users suite with options.
+func UsersWith(t *testing.T, newStore func(t *testing.T) UserStore, opts UsersOptions) {
+	roles := opts.Roles
+	if len(roles) == 0 {
+		roles = []string{"editor", "reader"}
+	}
 	t.Run("subjects and identities", func(t *testing.T) {
 		s := newStore(t)
 		g := provider.Identity{Provider: "google", ProviderID: "g-1", Email: "a@example.com"}
-		id, err := s.CreateSubject(ctx, g, iam.SignupGrant{Roles: []string{"editor", "reader"}})
+		id, err := s.CreateSubject(ctx, g, iam.SignupGrant{Roles: slices.Clone(roles)})
 		if err != nil || id == "" {
 			t.Fatalf("CreateSubject = %q, %v", id, err)
 		}
-		id2, _ := s.CreateSubject(ctx, g, iam.SignupGrant{})
-		if id2 == id {
-			t.Fatal("CreateSubject reused an ID")
+		// A different identity: IAM never creates two subjects for one
+		// identity, and stores may keep emails unique.
+		g2 := provider.Identity{Provider: "google", ProviderID: "g-2", Email: "b@example.com"}
+		id2, err := s.CreateSubject(ctx, g2, iam.SignupGrant{Roles: slices.Clone(opts.DefaultRoles)})
+		if err != nil || id2 == id {
+			t.Fatalf("second CreateSubject = %q, %v (first %q)", id2, err, id)
 		}
 
 		sub, err := s.LoadSubject(ctx, id)
-		if err != nil || sub.ID != id || !slices.Equal(sub.Roles, []string{"editor", "reader"}) || sub.Disabled {
+		if err != nil || sub.ID != id || !slices.Equal(sub.Roles, roles) || sub.Disabled {
 			t.Fatalf("LoadSubject = %+v, %v", sub, err)
 		}
 		if _, err := s.LoadSubject(ctx, "missing"); !errors.Is(err, iam.ErrNotFound) {

@@ -2,6 +2,8 @@ package httpauth_test
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -412,4 +414,66 @@ func (v validateSpy) ValidateSession(_ context.Context, tok string) (*iam.Subjec
 	default:
 	}
 	return nil, nil, iam.ErrInvalidSession
+}
+
+// unavailableSvc fails every credential check with a store error.
+type unavailableSvc struct{ iam.Service }
+
+func (unavailableSvc) ValidateSession(context.Context, string) (*iam.Subject, *iam.SessionInfo, error) {
+	return nil, nil, fmt.Errorf("%w: connection refused", iam.ErrUnavailable)
+}
+
+func (unavailableSvc) VerifyAccessToken(context.Context, string) (*iam.Subject, *iam.SessionInfo, error) {
+	return nil, nil, fmt.Errorf("%w: connection refused", iam.ErrUnavailable)
+}
+
+func TestStoreFailureIsServiceUnavailable(t *testing.T) {
+	var gotErr error
+	auth, err := httpauth.New(httpauth.Config{
+		Service: unavailableSvc{},
+		Modes:   []session.Mode{session.ModeCookie, session.ModeBearer},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, status int, err error) {
+			gotErr = err
+			w.WriteHeader(status)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached := false
+	h := auth.Protect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+
+	valid, _ := session.NewSecret()
+	tests := []struct {
+		name   string
+		header string
+		value  string
+		want   int
+	}{
+		{"cookie", "Cookie", "__Host-session=" + valid, http.StatusServiceUnavailable},
+		{"bearer", "Authorization", "Bearer abc.def.ghi", http.StatusServiceUnavailable},
+		{"anonymous", "", "", http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reached, gotErr = false, nil
+			r := httptest.NewRequest("GET", "/", nil)
+			if tt.header != "" {
+				r.Header.Set(tt.header, tt.value)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tt.want {
+				t.Fatalf("status = %d, want %d", w.Code, tt.want)
+			}
+			if tt.want == http.StatusServiceUnavailable {
+				if reached {
+					t.Fatal("handler ran as anonymous during a store failure")
+				}
+				if !errors.Is(gotErr, httpauth.ErrUnavailable) || !errors.Is(gotErr, iam.ErrUnavailable) {
+					t.Fatalf("error handler got %v", gotErr)
+				}
+			}
+		})
+	}
 }
