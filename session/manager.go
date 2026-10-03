@@ -177,6 +177,24 @@ func (m *Manager) rotate(ctx context.Context, s *Session, oldHash []byte) (*Sess
 	return s, secret, nil
 }
 
+// Inspect checks a bearer-mode refresh token without rotating or touching
+// it, and returns its session. It returns ErrInvalid for an unknown,
+// expired or already rotated token; use Refresh to rotate (Refresh also
+// detects reuse of rotated tokens). Store failures are returned as is.
+//
+// Inspect lets a caller check the session's subject before rotating, so
+// that a failure there does not discard the client's refresh token.
+func (m *Manager) Inspect(ctx context.Context, refreshToken string) (*Session, error) {
+	s, state, _, err := m.lookup(ctx, refreshToken, ModeBearer)
+	if err != nil {
+		return nil, err
+	}
+	if !state.RotatedAt.IsZero() {
+		return nil, ErrInvalid
+	}
+	return s, nil
+}
+
 // Refresh rotates a bearer-mode refresh token and returns the session and
 // the new refresh token.
 //

@@ -173,6 +173,27 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, client Clien
 		return nil, err
 	}
 
+	// Reload the subject before rotating, so roles and attributes are
+	// current, a disabled or deleted subject cannot keep refreshing, and a
+	// store failure leaves the client's refresh token usable for a retry.
+	// Tokens that do not pass Inspect (unknown, expired, or rotated away)
+	// go straight to Refresh, which classifies them and detects reuse.
+	var subject *Subject
+	switch current, err := s.sessions.Inspect(ctx, refreshToken); {
+	case err == nil:
+		subject, err = s.loadActiveSubject(ctx, current.SubjectID)
+		if err != nil {
+			if subjectGone(err) {
+				_ = s.sessions.RevokeByID(ctx, current.SubjectID, current.ID)
+			} else {
+				err = fmt.Errorf("%w: %w", ErrUnavailable, err)
+			}
+			return fail(current, audit.EventRefreshFailure, reasonFor(err), err)
+		}
+	case !errors.Is(err, session.ErrInvalid):
+		return fail(nil, audit.EventRefreshFailure, "store_error", sessionError(err))
+	}
+
 	sess, newRefresh, err := s.sessions.Refresh(ctx, refreshToken)
 	switch {
 	case errors.Is(err, session.ErrReused):
@@ -184,18 +205,11 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, client Clien
 		return fail(nil, audit.EventRefreshFailure, "invalid_session", err)
 	case err != nil:
 		return fail(nil, audit.EventRefreshFailure, "store_error", sessionError(err))
-	}
-
-	// Reload the subject so roles and attributes are current, and so a
-	// disabled or deleted subject cannot keep refreshing.
-	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
-	if err != nil {
-		if subjectGone(err) {
-			_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
-		} else {
-			err = fmt.Errorf("%w: %w", ErrUnavailable, err)
-		}
-		return fail(sess, audit.EventRefreshFailure, reasonFor(err), err)
+	case subject == nil || sess.SubjectID != subject.ID:
+		// Unreachable in practice: a token that failed Inspect cannot pass
+		// Refresh, and a concurrent rotation between the two calls is
+		// reported above as ErrReused or ErrRaced. Defensive only.
+		return fail(sess, audit.EventRefreshFailure, "invalid_session", ErrInvalidSession)
 	}
 
 	at, err := s.cfg.TokenIssuer.Issue(ctx, claimsFor(subject, sess.ID))

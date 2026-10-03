@@ -4,11 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-Each module is tagged separately and the versions move together: `v2.0.0`
-for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
-`redisstore/v2.0.0` and `prometheus/v2.0.0` for the sub-modules.
+Each module is tagged separately and the versions move together: `v2.1.0`
+for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
+`redisstore/v2.1.0` and `prometheus/v2.1.0` for the sub-modules.
 
 ## [Unreleased]
+
+## [2.1.0] — 2026-10-03
+
+The sub-modules have no changes of their own; they are released together
+with the core module and require core `v2.1.0`.
 
 ### Added
 
@@ -17,6 +22,7 @@ for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
   `httpauth.ErrUnavailable` wraps it.
 - `storetest.UsersWith` and `storetest.UsersOptions`, for user stores that
   allow one role per subject or require a role.
+- `session.Manager.Inspect`: checks a refresh token without rotating it.
 
 ### Changed
 
@@ -31,7 +37,7 @@ for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
   reporting `ErrInvalidSession`.
 - `storetest.Users` creates its second subject from a different identity
   and email, so stores with unique emails can run it.
-
+- `Refresh` loads the subject **before** rotating the refresh token.
 - CI lints every module with golangci-lint (`.golangci.yml`: the standard
   set plus gosec, errorlint, gocritic, bodyclose, nilerr, misspell,
   unconvert, copyloopvar; gofmt and goimports). It replaces the separate
@@ -49,6 +55,9 @@ for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
 - `RotateSession` rotated the secret before loading the subject, so a failure
   there discarded the client's only valid secret. It now checks the subject
   first.
+- `Refresh` rotated the refresh token before loading the subject, so a
+  transient failure there lost the new token, and the client's retry with
+  the old one revoked the whole session as reuse (#7).
 - pgstore: the deferred rollback in `Migrate` no longer drops its error
   unchecked.
 
@@ -170,4 +179,6 @@ requires for major versions above 1.
   ever committed**: `.env` (`JWT_SECRET_KEY`) was tracked in git history
   before this release.
 
+[Unreleased]: https://github.com/kararnab/iam/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/kararnab/iam/releases/tag/v2.1.0
 [2.0.0]: https://github.com/kararnab/iam/releases/tag/v2.0.0

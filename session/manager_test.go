@@ -320,3 +320,44 @@ func FuzzHashSecret(f *testing.F) {
 		}
 	})
 }
+
+func TestInspect(t *testing.T) {
+	m, _, clk := newManager(t, 0)
+	s, rt1, _ := m.Create(ctx, "sub", session.ModeBearer, nil)
+	_, cookie, _ := m.Create(ctx, "sub", session.ModeCookie, nil)
+
+	got, err := m.Inspect(ctx, rt1)
+	if err != nil || got.ID != s.ID {
+		t.Fatalf("inspect = %+v, %v", got, err)
+	}
+	// Inspect neither rotates nor touches: the token still refreshes.
+	_, rt2, err := m.Refresh(ctx, rt1)
+	if err != nil {
+		t.Fatalf("refresh after inspect: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		token string
+	}{
+		{"rotated away", rt1},
+		{"cookie session", cookie},
+		{"garbage", "not-a-token"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := m.Inspect(ctx, tt.token); !errors.Is(err, session.ErrInvalid) {
+				t.Fatalf("err = %v, want ErrInvalid", err)
+			}
+		})
+	}
+	// Inspecting a rotated token is not reuse: the session survives.
+	if _, err := m.Inspect(ctx, rt2); err != nil {
+		t.Fatalf("latest token after inspecting a rotated one: %v", err)
+	}
+
+	clk.Add(73 * time.Hour)
+	if _, err := m.Inspect(ctx, rt2); !errors.Is(err, session.ErrInvalid) {
+		t.Fatalf("expired: %v", err)
+	}
+}
