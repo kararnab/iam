@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kararnab/iam/v2"
+	"github.com/kararnab/iam/v2/audit"
 	"github.com/kararnab/iam/v2/session"
 )
 
@@ -126,5 +127,44 @@ func TestSessionStoreFailureIsUnavailable(t *testing.T) {
 	// Unknown tokens are still invalid, not unavailable.
 	if _, _, err := f.svc.ValidateSession(ctx, "garbage"); !errors.Is(err, iam.ErrInvalidSession) {
 		t.Fatalf("garbage token: %v", err)
+	}
+}
+
+// Issue #7: a store failure during Refresh must not consume the refresh
+// token, so the client can retry without triggering reuse detection.
+func TestRefreshStoreFailureKeepsRefreshToken(t *testing.T) {
+	var users *flakyUsers
+	f := newFixture(t, func(c *iam.Config) {
+		users = &flakyUsers{UserStore: c.Users}
+		c.Users = users
+	})
+	res, err := f.svc.Login(ctx, pwLogin("admin@example.com", adminPW, session.ModeBearer))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	users.down.Store(true)
+	_, err = f.svc.Refresh(ctx, res.RefreshToken, iam.ClientInfo{})
+	isUnavailable(t, "refresh during outage", err)
+	users.down.Store(false)
+
+	// The retry with the same token succeeds: nothing was rotated.
+	pair, err := f.svc.Refresh(ctx, res.RefreshToken, iam.ClientInfo{})
+	if err != nil {
+		t.Fatalf("retry after outage: %v", err)
+	}
+	if f.audit.has(audit.EventRefreshReuse) {
+		t.Fatal("the retry was treated as refresh-token reuse")
+	}
+	if list, _ := f.svc.ListSessions(ctx, "s-admin"); len(list) != 1 {
+		t.Fatalf("sessions = %d, want 1", len(list))
+	}
+
+	// Reuse detection still works for a token that really was rotated.
+	if _, err := f.svc.Refresh(ctx, res.RefreshToken, iam.ClientInfo{}); !errors.Is(err, iam.ErrRefreshReused) {
+		t.Fatalf("reuse of rotated token: %v", err)
+	}
+	if _, err := f.svc.Refresh(ctx, pair.RefreshToken, iam.ClientInfo{}); !errors.Is(err, iam.ErrInvalidSession) {
+		t.Fatalf("session after reuse: %v", err)
 	}
 }
