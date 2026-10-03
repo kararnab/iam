@@ -10,7 +10,27 @@ for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
 
 ## [Unreleased]
 
+### Added
+
+- `iam.ErrUnavailable`: wraps a store failure while checking a session or
+  a subject, so callers can answer "try again" instead of "signed out".
+  `httpauth.ErrUnavailable` wraps it.
+- `storetest.UsersWith` and `storetest.UsersOptions`, for user stores that
+  allow one role per subject or require a role.
+
 ### Changed
+
+- `httpauth.Middleware.Protect` answers **503** (`ErrUnavailable` to the
+  `ErrorHandler`) when a store fails while it checks a cookie or bearer
+  credential. Before, the request silently became anonymous, so a signed-in
+  user looked signed out during an outage. Invalid credentials are still
+  anonymous.
+- `ValidateSession`, `RotateSession`, `Refresh`, `Logout` and
+  `VerifyAccessToken` (with `VerifySessionOnAccess`) return errors wrapping
+  `ErrUnavailable` for store failures, instead of passing the raw error or
+  reporting `ErrInvalidSession`.
+- `storetest.Users` creates its second subject from a different identity
+  and email, so stores with unique emails can run it.
 
 - CI lints every module with golangci-lint (`.golangci.yml`: the standard
   set plus gosec, errorlint, gocritic, bodyclose, nilerr, misspell,
@@ -22,6 +42,13 @@ for the core module, and `oidc/v2.0.0`, `paseto/v2.0.0`, `pgstore/v2.0.0`,
 
 ### Fixed
 
+- `ValidateSession`, `RotateSession` and `Refresh` revoked the session when
+  loading the subject failed for any reason, so a transient database error
+  signed the user out. They now revoke only when the subject is gone or
+  disabled.
+- `RotateSession` rotated the secret before loading the subject, so a failure
+  there discarded the client's only valid secret. It now checks the subject
+  first.
 - pgstore: the deferred rollback in `Migrate` no longer drops its error
   unchecked.
 

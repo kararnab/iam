@@ -24,6 +24,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -109,6 +110,12 @@ var (
 
 	// ErrForbidden is passed to the ErrorHandler for denied requests.
 	ErrForbidden = errors.New("httpauth: forbidden")
+
+	// ErrUnavailable is passed to the ErrorHandler, with status 503, when
+	// the credential could not be checked because a store failed. It wraps
+	// iam.ErrUnavailable. The request is not treated as anonymous: that
+	// would make a signed-in user look signed out during an outage.
+	ErrUnavailable = fmt.Errorf("httpauth: %w", iam.ErrUnavailable)
 
 	// ErrCSRF is passed to the ErrorHandler when the CSRF token is missing
 	// or wrong.
@@ -251,7 +258,8 @@ func isSafeMethod(method string) bool {
 //     based on Sec-Fetch-Site / Origin), including unauthenticated ones such
 //     as login forms;
 //  2. identifies the caller from the session cookie or the Authorization
-//     header; invalid credentials make the request anonymous;
+//     header; invalid credentials make the request anonymous, while a store
+//     failure while checking them answers 503 with ErrUnavailable;
 //  3. for unsafe methods authenticated by cookie, requires the per-session
 //     CSRF token (header or form field).
 //
@@ -266,7 +274,11 @@ func (m *Middleware) Protect(next http.Handler) http.Handler {
 			}
 		}
 
-		st := m.identify(r)
+		st, err := m.identify(r)
+		if err != nil {
+			m.onError(w, r, http.StatusServiceUnavailable, ErrUnavailable)
+			return
+		}
 		if st != nil && st.mode == session.ModeCookie && !m.csrf.Disabled && !isSafeMethod(r.Method) {
 			if !m.validCSRF(r, st.session.ID) {
 				m.onError(w, r, http.StatusForbidden, ErrCSRF)
@@ -282,27 +294,37 @@ func (m *Middleware) Protect(next http.Handler) http.Handler {
 
 // identify returns the caller's state, or nil for anonymous requests.
 // A request presenting both a cookie and a bearer token is rejected as
-// anonymous, because it is ambiguous.
-func (m *Middleware) identify(r *http.Request) *authState {
+// anonymous, because it is ambiguous. The error is non-nil only when a
+// store failed (iam.ErrUnavailable); invalid credentials are anonymous.
+func (m *Middleware) identify(r *http.Request) (*authState, error) {
 	bearer, hasBearer := m.bearerToken(r)
 	cookie, hasCookie := m.sessionCookie(r)
 	if hasBearer && hasCookie {
-		return nil
+		return nil, nil
 	}
 
 	switch {
 	case hasCookie:
 		subject, info, err := m.svc.ValidateSession(r.Context(), cookie)
 		if err != nil {
-			return nil
+			return nil, unavailable(err)
 		}
-		return &authState{subject: subject, session: info, mode: session.ModeCookie}
+		return &authState{subject: subject, session: info, mode: session.ModeCookie}, nil
 	case hasBearer:
 		subject, info, err := m.svc.VerifyAccessToken(r.Context(), bearer)
 		if err != nil {
-			return nil
+			return nil, unavailable(err)
 		}
-		return &authState{subject: subject, session: info, mode: session.ModeBearer}
+		return &authState{subject: subject, session: info, mode: session.ModeBearer}, nil
+	}
+	return nil, nil
+}
+
+// unavailable returns err if it reports a store failure, and nil for every
+// other error (an invalid credential, which makes the request anonymous).
+func unavailable(err error) error {
+	if errors.Is(err, iam.ErrUnavailable) {
+		return err
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package iam
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -179,15 +180,21 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, client Clien
 		return fail(sess, audit.EventRefreshReuse, "reuse", err)
 	case errors.Is(err, session.ErrRaced):
 		return fail(sess, audit.EventRefreshFailure, "raced", err)
-	case err != nil:
+	case errors.Is(err, session.ErrInvalid):
 		return fail(nil, audit.EventRefreshFailure, "invalid_session", err)
+	case err != nil:
+		return fail(nil, audit.EventRefreshFailure, "store_error", sessionError(err))
 	}
 
 	// Reload the subject so roles and attributes are current, and so a
 	// disabled or deleted subject cannot keep refreshing.
 	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
 	if err != nil {
-		_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
+		if subjectGone(err) {
+			_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
+		} else {
+			err = fmt.Errorf("%w: %w", ErrUnavailable, err)
+		}
 		return fail(sess, audit.EventRefreshFailure, reasonFor(err), err)
 	}
 
@@ -224,6 +231,9 @@ func (s *service) VerifyAccessToken(ctx context.Context, accessToken string) (*S
 	info := &SessionInfo{ID: claims.SessionID, SubjectID: claims.SubjectID, Mode: session.ModeBearer}
 	if s.cfg.VerifySessionOnAccess {
 		sess, err := s.sessions.Get(ctx, claims.SessionID)
+		if err != nil && !errors.Is(err, session.ErrInvalid) {
+			return nil, nil, sessionError(err)
+		}
 		if err != nil || sess.SubjectID != claims.SubjectID || sess.Mode != session.ModeBearer {
 			s.cfg.Metrics.Inc(metrics.TokenVerifyFailure)
 			return nil, nil, ErrInvalidSession
@@ -242,26 +252,30 @@ func (s *service) VerifyAccessToken(ctx context.Context, accessToken string) (*S
 func (s *service) ValidateSession(ctx context.Context, sessionToken string) (*Subject, *SessionInfo, error) {
 	sess, err := s.sessions.Validate(ctx, sessionToken)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, sessionError(err)
 	}
-	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
+	subject, err := s.sessionSubject(ctx, sess)
 	if err != nil {
-		_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
-		return nil, nil, ErrInvalidSession
+		return nil, nil, err
 	}
 	info := infoFor(sess)
 	return subject, &info, nil
 }
 
 func (s *service) RotateSession(ctx context.Context, sessionToken string) (*LoginResult, error) {
-	sess, secret, err := s.sessions.Rotate(ctx, sessionToken)
+	// Check the subject before rotating: rotating first would discard the
+	// client's secret if loading the subject then failed.
+	current, err := s.sessions.Validate(ctx, sessionToken)
+	if err != nil {
+		return nil, sessionError(err)
+	}
+	subject, err := s.sessionSubject(ctx, current)
 	if err != nil {
 		return nil, err
 	}
-	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
+	sess, secret, err := s.sessions.Rotate(ctx, sessionToken)
 	if err != nil {
-		_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
-		return nil, ErrInvalidSession
+		return nil, sessionError(err)
 	}
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventSessionRotated,
@@ -279,7 +293,7 @@ func (s *service) RotateSession(ctx context.Context, sessionToken string) (*Logi
 func (s *service) Logout(ctx context.Context, tok string) error {
 	sess, err := s.sessions.Revoke(ctx, tok)
 	if err != nil {
-		return err
+		return sessionError(err)
 	}
 	if sess == nil {
 		return nil
@@ -522,6 +536,39 @@ func (s *service) recordFailure(ctx context.Context, req AuthRequest, k limitKey
 			},
 		})
 	}
+}
+
+// sessionSubject loads the active subject of a valid session. When the
+// subject no longer exists or is disabled, the session is revoked and
+// ErrInvalidSession is returned. Any other failure is a store problem: it
+// is returned wrapped in ErrUnavailable and the session is kept, so a
+// transient outage does not sign the user out.
+func (s *service) sessionSubject(ctx context.Context, sess *session.Session) (*Subject, error) {
+	subject, err := s.loadActiveSubject(ctx, sess.SubjectID)
+	switch {
+	case err == nil:
+		return subject, nil
+	case subjectGone(err):
+		_ = s.sessions.RevokeByID(ctx, sess.SubjectID, sess.ID)
+		return nil, ErrInvalidSession
+	default:
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+}
+
+// subjectGone reports whether err means the subject can no longer hold a
+// session (deleted or disabled), as opposed to a store failure.
+func subjectGone(err error) bool {
+	return errors.Is(err, ErrNotFound) || errors.Is(err, ErrSubjectDisabled)
+}
+
+// sessionError keeps session.ErrInvalid as it is and wraps every other
+// session-store failure in ErrUnavailable.
+func sessionError(err error) error {
+	if err == nil || errors.Is(err, session.ErrInvalid) || errors.Is(err, ErrUnavailable) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrUnavailable, err)
 }
 
 // loadActiveSubject loads a subject and rejects disabled ones.

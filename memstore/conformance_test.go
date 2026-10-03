@@ -19,4 +19,8 @@ func TestConformance(t *testing.T) {
 	t.Run("users", func(t *testing.T) {
 		storetest.Users(t, func(*testing.T) storetest.UserStore { return memstore.NewUsers() })
 	})
+	t.Run("users with one role", func(t *testing.T) {
+		storetest.UsersWith(t, func(*testing.T) storetest.UserStore { return memstore.NewUsers() },
+			storetest.UsersOptions{Roles: []string{"admin"}, DefaultRoles: []string{"learner"}})
+	})
 }
