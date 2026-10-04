@@ -11,6 +11,7 @@ live in `memstore` (core), and durable ones in the `pgstore` and
 | `session.Store` | sessions and rotated token hashes | `Sessions` | `Sessions` | `Sessions` |
 | `invite.Store` | invites | `Invites` | `Invites` | – |
 | `onetime.Store` | password-reset and verification tokens | `Tokens` | `Tokens` | – |
+| `mfa.Store` | TOTP factors and recovery-code hashes | `MFA` | `MFA` | – |
 | `ratelimit.Limiter` | failure counters | `ratelimit.Memory` | – | `Limiter` |
 
 Users are **application-owned**. If you already have a users table,
@@ -45,7 +46,7 @@ cfg := iam.Config{
 
 If you implement `iam.UserStore` over your own tables, you need only the
 tables that do not hold users (`iam_sessions`, `iam_rotated_tokens`,
-`iam_invites`, `iam_one_time_tokens`). Create just those:
+`iam_invites`, `iam_one_time_tokens`, `iam_mfa_totp`). Create just those:
 
 ```go
 if err := pgstore.MigrateSessions(ctx, pool); err != nil { ... }
@@ -118,6 +119,7 @@ func TestMyStores(t *testing.T) {
     storetest.Sessions(t, func(t *testing.T) session.Store { return newMySessions(t) })
     storetest.Invites(t, func(t *testing.T) invite.Store { return newMyInvites(t) })
     storetest.Tokens(t, func(t *testing.T) onetime.Store { return newMyTokens(t) })
+    storetest.MFA(t, func(t *testing.T) mfa.Store { return newMyMFA(t) })
     storetest.Users(t, func(t *testing.T) storetest.UserStore { return newMyUsers(t) })
 }
 ```

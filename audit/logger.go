@@ -1,6 +1,6 @@
 // Package audit defines the security events IAM emits (logins, logouts,
 // refreshes, refresh-token reuse, revocations, policy denials, sign-ups,
-// invites, throttling, password resets, email verification) and the Logger interface that receives them.
+// invites, throttling, password resets, email verification, MFA) and the Logger interface that receives them.
 //
 // IAM decides what happened; the Logger decides where it goes. SlogLogger
 // writes to log/slog; Multi and Func compose custom sinks. Events never
@@ -40,6 +40,14 @@ const (
 	EventPasswordReset              EventType = "password_reset"
 	EventEmailVerificationRequested EventType = "email_verification_requested"
 	EventEmailVerified              EventType = "email_verified"
+
+	EventMFAChallenge        EventType = "mfa_challenge"
+	EventMFASuccess          EventType = "mfa_success"
+	EventMFAFailure          EventType = "mfa_failure"
+	EventMFAEnrolled         EventType = "mfa_enrolled"
+	EventMFADisabled         EventType = "mfa_disabled"
+	EventRecoveryCodeUsed    EventType = "mfa_recovery_code_used"
+	EventRecoveryCodesIssued EventType = "mfa_recovery_codes_issued"
 )
 
 // Event represents a single audit log entry.

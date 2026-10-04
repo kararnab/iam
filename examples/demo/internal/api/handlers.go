@@ -22,6 +22,7 @@ import (
 //     same-origin web apps.
 type Handlers struct {
 	IAM      iam.Service
+	MFA      iam.MFA
 	Recovery iam.Recovery
 	Auth     *httpauth.Middleware
 	Mail     Mailer
@@ -29,14 +30,23 @@ type Handlers struct {
 
 func NewHandlers(svc iam.Service, auth *httpauth.Middleware, mail Mailer) *Handlers {
 	rec, _ := svc.(iam.Recovery)
-	return &Handlers{IAM: svc, Recovery: rec, Auth: auth, Mail: mail}
+	m, _ := svc.(iam.MFA)
+	return &Handlers{IAM: svc, MFA: m, Recovery: rec, Auth: auth, Mail: mail}
 }
 
 // writeAuthError maps IAM errors to HTTP responses without revealing which
 // part of a credential was wrong.
 func writeAuthError(w http.ResponseWriter, err error, fallback string) {
 	var rl *iam.RateLimitError
+	var needMFA *iam.MFARequiredError
 	switch {
+	case errors.As(err, &needMFA):
+		// The password was right; no session yet. The client sends the
+		// challenge back with a code to .../login/mfa.
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "mfa required", "mfa_required": true,
+			"challenge": needMFA.Challenge, "expires_at": needMFA.ExpiresAt,
+		})
 	case errors.As(err, &rl):
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(rl.RetryAfter.Seconds()))))
 		writeError(w, http.StatusTooManyRequests, "too many attempts")

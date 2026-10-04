@@ -21,6 +21,7 @@ import (
 
 	"github.com/kararnab/iam/v2"
 	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/password"
 	"github.com/kararnab/iam/v2/provider"
@@ -400,6 +401,135 @@ func Tokens(t *testing.T, newStore func(t *testing.T) onetime.Store) {
 		}
 		if _, err := s.GetByTokenHash(ctx, bobHash); err != nil {
 			t.Fatalf("other subject deleted: %v", err)
+		}
+	})
+}
+
+// MFA runs the mfa.Store conformance tests.
+func MFA(t *testing.T, newStore func(t *testing.T) mfa.Store) {
+	h := mfa.HashRecoveryCode
+	factor := func(subject string) *mfa.TOTP {
+		return &mfa.TOTP{
+			SubjectID: subject, Secret: []byte("sealed-secret"), Confirmed: true, LastStep: 100,
+			RecoveryCodes: [][]byte{h("aaaaa-aaaaa"), h("bbbbb-bbbbb")}, CreatedAt: base,
+		}
+	}
+
+	t.Run("put, get, replace, delete", func(t *testing.T) {
+		s := newStore(t)
+		if _, err := s.GetTOTP(ctx, "alice"); !errors.Is(err, mfa.ErrNotFound) {
+			t.Fatalf("missing: %v", err)
+		}
+		pending := &mfa.TOTP{SubjectID: "alice", Secret: []byte("pending"), CreatedAt: base}
+		if err := s.PutTOTP(ctx, pending); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetTOTP(ctx, "alice")
+		if err != nil || got.Confirmed || string(got.Secret) != "pending" || len(got.RecoveryCodes) != 0 || !sameTime(got.CreatedAt, base) {
+			t.Fatalf("pending = %+v, %v", got, err)
+		}
+		if err := s.PutTOTP(ctx, factor("alice")); err != nil {
+			t.Fatalf("replace: %v", err)
+		}
+		got, err = s.GetTOTP(ctx, "alice")
+		if err != nil || !got.Confirmed || string(got.Secret) != "sealed-secret" || got.LastStep != 100 ||
+			len(got.RecoveryCodes) != 2 || !bytes.Equal(got.RecoveryCodes[1], h("bbbbb-bbbbb")) {
+			t.Fatalf("confirmed = %+v, %v", got, err)
+		}
+		if err := s.DeleteTOTP(ctx, "alice"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DeleteTOTP(ctx, "alice"); err != nil {
+			t.Fatalf("second delete: %v", err)
+		}
+		if _, err := s.GetTOTP(ctx, "alice"); !errors.Is(err, mfa.ErrNotFound) {
+			t.Fatalf("after delete: %v", err)
+		}
+	})
+
+	t.Run("advance only forward", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.PutTOTP(ctx, factor("alice"))
+		for _, tt := range []struct {
+			step int64
+			want bool
+		}{{100, false}, {99, false}, {101, true}, {101, false}, {103, true}} {
+			if got, err := s.AdvanceTOTP(ctx, "alice", tt.step); err != nil || got != tt.want {
+				t.Fatalf("AdvanceTOTP(%d) = %v, %v", tt.step, got, err)
+			}
+		}
+		if got, _ := s.GetTOTP(ctx, "alice"); got.LastStep != 103 {
+			t.Fatalf("LastStep = %d", got.LastStep)
+		}
+		if ok, err := s.AdvanceTOTP(ctx, "nobody", 1); ok || err != nil {
+			t.Fatalf("unknown subject = %v, %v", ok, err)
+		}
+	})
+
+	t.Run("concurrent advance has one winner", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.PutTOTP(ctx, factor("alice"))
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		wins := 0
+		for range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if ok, _ := s.AdvanceTOTP(ctx, "alice", 200); ok {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("%d advances won", wins)
+		}
+	})
+
+	t.Run("recovery codes are single-use", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.PutTOTP(ctx, factor("alice"))
+		_ = s.PutTOTP(ctx, factor("bob"))
+		if ok, err := s.UseRecoveryCode(ctx, "alice", h("aaaaa-aaaaa")); !ok || err != nil {
+			t.Fatalf("first use = %v, %v", ok, err)
+		}
+		if ok, _ := s.UseRecoveryCode(ctx, "alice", h("aaaaa-aaaaa")); ok {
+			t.Fatal("second use accepted")
+		}
+		if ok, _ := s.UseRecoveryCode(ctx, "alice", h("ccccc-ccccc")); ok {
+			t.Fatal("unknown code accepted")
+		}
+		if ok, _ := s.UseRecoveryCode(ctx, "nobody", h("bbbbb-bbbbb")); ok {
+			t.Fatal("code accepted for an unknown subject")
+		}
+		got, _ := s.GetTOTP(ctx, "alice")
+		if len(got.RecoveryCodes) != 1 || !bytes.Equal(got.RecoveryCodes[0], h("bbbbb-bbbbb")) {
+			t.Fatalf("remaining = %x", got.RecoveryCodes)
+		}
+		if bob, _ := s.GetTOTP(ctx, "bob"); len(bob.RecoveryCodes) != 2 {
+			t.Fatal("another subject's codes changed")
+		}
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		wins := 0
+		for range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if ok, _ := s.UseRecoveryCode(ctx, "bob", h("bbbbb-bbbbb")); ok {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("%d concurrent uses won", wins)
 		}
 	})
 }

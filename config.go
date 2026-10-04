@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/kararnab/iam/v2/audit"
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/metrics"
+	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/policy"
 	"github.com/kararnab/iam/v2/provider"
@@ -88,6 +90,33 @@ type RecoveryConfig struct {
 	VerificationTTL time.Duration
 }
 
+// MFAConfig enables TOTP multi-factor authentication (see MFA). It is off
+// until Store is set.
+type MFAConfig struct {
+	// Store keeps each subject's TOTP factor.
+	Store mfa.Store
+
+	// Key seals TOTP secrets at rest and login challenges; at least 32
+	// bytes. Changing it makes every enrolled factor unusable, so keep it
+	// with your other long-lived secrets.
+	Key []byte
+
+	// Issuer names your application in authenticator apps. Required.
+	Issuer string
+
+	// ChallengeTTL is how long a user has to enter their code after the
+	// first factor. Default 5 minutes, max 15 minutes.
+	ChallengeTTL time.Duration
+
+	// Skew is how many 30-second steps either side of now are accepted.
+	// Default 1; at most 2.
+	Skew int
+
+	// ExemptProviders are providers whose logins never ask for a code, for
+	// example an OIDC issuer that enforces its own MFA.
+	ExemptProviders []string
+}
+
 // RateLimitConfig throttles failed logins.
 //
 // When both limiters are nil and Disabled is false, in-memory limiters are
@@ -152,6 +181,9 @@ type Config struct {
 
 	// Recovery enables password reset and email verification.
 	Recovery RecoveryConfig
+
+	// MFA enables TOTP multi-factor authentication.
+	MFA MFAConfig
 
 	// Audit receives security events. Default: audit.SlogLogger.
 	Audit audit.Logger
@@ -223,6 +255,9 @@ func (c *Config) validate() error {
 	if err := c.Recovery.validate(c.Providers); err != nil {
 		return err
 	}
+	if err := c.MFA.validate(); err != nil {
+		return err
+	}
 
 	if !c.RateLimit.Disabled && c.RateLimit.PerLogin == nil && c.RateLimit.PerIP == nil {
 		var err error
@@ -280,6 +315,31 @@ func (c *RecoveryConfig) validate(providers []provider.AuthProvider) error {
 	}
 	if c.VerificationTTL < 0 || c.VerificationTTL > 30*24*time.Hour {
 		return errors.New("iam: Recovery.VerificationTTL must be between 0 and 30 days")
+	}
+	return nil
+}
+
+func (c *MFAConfig) validate() error {
+	if c.Store == nil {
+		return nil
+	}
+	if len(c.Key) < 32 {
+		return errors.New("iam: MFA.Key must be at least 32 bytes")
+	}
+	if strings.TrimSpace(c.Issuer) == "" {
+		return errors.New("iam: MFA.Issuer is required")
+	}
+	if c.ChallengeTTL == 0 {
+		c.ChallengeTTL = 5 * time.Minute
+	}
+	if c.ChallengeTTL < 0 || c.ChallengeTTL > 15*time.Minute {
+		return errors.New("iam: MFA.ChallengeTTL must be between 0 and 15 minutes")
+	}
+	if c.Skew == 0 {
+		c.Skew = 1
+	}
+	if c.Skew < 0 || c.Skew > 2 {
+		return errors.New("iam: MFA.Skew must be 1 or 2")
 	}
 	return nil
 }

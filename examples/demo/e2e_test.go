@@ -9,12 +9,15 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/kararnab/iam/examples/demo/internal/api"
+	"github.com/kararnab/iam/v2/mfa"
 )
 
 const (
@@ -43,6 +46,7 @@ func newTestServerWith(t *testing.T, mailer api.Mailer) *httptest.Server {
 		AdminPassword: adminPW,
 		DatabaseURL:   dsn,
 		Mailer:        mailer,
+		MFAKey:        bytes.Repeat([]byte("m"), 32),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +64,7 @@ func resetDatabase(t *testing.T, dsn string) {
 	}
 	defer conn.Close(context.Background())
 	if _, err := conn.Exec(context.Background(), `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
-		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_schema_migrations CASCADE`); err != nil {
+		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_schema_migrations CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -82,6 +86,17 @@ func newClient(t *testing.T, srv *httptest.Server) *client {
 
 func (c *client) do(method, path string, body any, out any) int {
 	c.t.Helper()
+	return c.send(method, path, body, out, false)
+}
+
+// doRaw is do, but decodes the body whatever the status.
+func (c *client) doRaw(method, path string, body any, out any) int {
+	c.t.Helper()
+	return c.send(method, path, body, out, true)
+}
+
+func (c *client) send(method, path string, body any, out any, always bool) int {
+	c.t.Helper()
 	var r io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
@@ -100,7 +115,7 @@ func (c *client) do(method, path string, body any, out any) int {
 		c.t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if out != nil && resp.StatusCode < 300 {
+	if out != nil && (always || resp.StatusCode < 300) {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 			c.t.Fatalf("%s %s: decode: %v", method, path, err)
 		}
@@ -380,4 +395,78 @@ func TestEmailVerificationFlow(t *testing.T) {
 		t.Fatalf("verified = %+v", got)
 	}
 	anon.expect(400, "POST", "/api/email/verify", map[string]string{"token": tok}, nil)
+}
+
+// TestMFAFlow: the admin turns on TOTP; logins then need a code (or a
+// recovery code), and turning it off needs a fresh code.
+func TestMFAFlow(t *testing.T) {
+	srv := newTestServer(t)
+	c := newClient(t, srv)
+	var s sessionBody
+	c.expect(200, "POST", "/api/session/login", login(adminEmail, adminPW), &s)
+	c.csrf = s.CSRFToken
+
+	var enroll struct{ Secret, URI string }
+	c.expect(200, "POST", "/api/mfa/totp", nil, &enroll)
+	secret, err := mfa.DecodeSecret(enroll.Secret)
+	if err != nil || !strings.HasPrefix(enroll.URI, "otpauth://totp/") {
+		t.Fatalf("enrollment = %+v, %v", enroll, err)
+	}
+	// Codes are only accepted for a step later than the last one used, and
+	// within one step of now; each use takes the next unused step.
+	last := int64(0)
+	code := func() string {
+		last = max(last+1, mfa.Step(time.Now())-1)
+		return mfa.Code(secret, last)
+	}
+	var confirmed struct {
+		RecoveryCodes []string `json:"recovery_codes"`
+	}
+	c.expect(401, "POST", "/api/mfa/totp/confirm", map[string]string{"code": "000000"}, nil)
+	c.expect(200, "POST", "/api/mfa/totp/confirm", map[string]string{"code": code()}, &confirmed)
+	if len(confirmed.RecoveryCodes) != mfa.RecoveryCodeCount {
+		t.Fatalf("recovery codes = %v", confirmed.RecoveryCodes)
+	}
+
+	// The password alone now gives a challenge, not a session.
+	anon := newClient(t, srv)
+	var challenge struct {
+		MFARequired bool   `json:"mfa_required"`
+		Challenge   string `json:"challenge"`
+	}
+	if got := anon.doRaw("POST", "/api/session/login", login(adminEmail, adminPW), &challenge); got != 401 || !challenge.MFARequired {
+		t.Fatalf("login = %d %+v", got, challenge)
+	}
+	anon.expect(401, "GET", "/api/me", nil, nil)
+	anon.expect(401, "POST", "/api/session/login/mfa", map[string]string{"challenge": challenge.Challenge, "code": "000000"}, nil)
+	var ms sessionBody
+	anon.expect(200, "POST", "/api/session/login/mfa", map[string]string{"challenge": challenge.Challenge, "code": code()}, &ms)
+	var me struct {
+		Session struct {
+			MFA bool `json:"mfa"`
+		} `json:"session"`
+	}
+	anon.expect(200, "GET", "/api/session", nil, &me)
+	if !me.Session.MFA {
+		t.Fatal("session not marked as MFA")
+	}
+
+	// Bearer login with a recovery code.
+	api := newClient(t, srv)
+	if got := api.doRaw("POST", "/api/login", login(adminEmail, adminPW), &challenge); got != 401 {
+		t.Fatalf("bearer login = %d", got)
+	}
+	var tokens struct {
+		AccessToken string `json:"access_token"`
+	}
+	api.expect(200, "POST", "/api/login/mfa", map[string]string{"challenge": challenge.Challenge, "code": confirmed.RecoveryCodes[0]}, &tokens)
+	if tokens.AccessToken == "" {
+		t.Fatal("no access token")
+	}
+
+	// Turning MFA off needs a fresh code.
+	anon.csrf = ms.CSRFToken
+	anon.expect(401, "DELETE", "/api/mfa/totp", map[string]string{"code": "000000"}, nil)
+	anon.expect(204, "DELETE", "/api/mfa/totp", map[string]string{"code": code()}, nil)
+	newClient(t, srv).expect(200, "POST", "/api/session/login", login(adminEmail, adminPW), nil)
 }

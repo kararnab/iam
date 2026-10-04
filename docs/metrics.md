@@ -13,8 +13,9 @@ The set of events is fixed and low-cardinality (`metrics.Events`):
 `refresh_failure`, `refresh_reuse`, `token_verify_success`,
 `token_verify_failure`, `session_revoked`, `policy_denied`, `signup`,
 `signup_failure`, `rate_limited`, `password_reset_requested`,
-`password_reset`, `password_reset_failure`, `email_verified` and
-`email_verification_failure`. No subject IDs, tokens or other
+`password_reset`, `password_reset_failure`, `email_verified`,
+`email_verification_failure`, `mfa_challenge`, `mfa_success` and
+`mfa_failure`. No subject IDs, tokens or other
 unbounded values are ever passed. Adding an event in a later version does
 not break your implementation.
 

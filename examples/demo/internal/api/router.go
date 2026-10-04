@@ -30,12 +30,14 @@ func NewRouter(
 	// Bearer-token API (JSON)
 	mux.HandleFunc("POST /api/register", h.register(session.ModeBearer))
 	mux.HandleFunc("POST /api/login", h.login(session.ModeBearer))
+	mux.HandleFunc("POST /api/login/mfa", h.loginMFA)
 	mux.HandleFunc("POST /api/refresh", h.Refresh)
 	mux.HandleFunc("POST /api/logout", h.Logout)
 
 	// Cookie sessions (browsers)
 	mux.HandleFunc("POST /api/session/register", h.register(session.ModeCookie))
 	mux.HandleFunc("POST /api/session/login", h.login(session.ModeCookie))
+	mux.HandleFunc("POST /api/session/login/mfa", h.loginMFA)
 	mux.Handle("GET /api/session", authed(h.Session))
 	mux.HandleFunc("POST /api/session/logout", h.SessionLogout)
 
@@ -44,6 +46,11 @@ func NewRouter(
 	mux.HandleFunc("POST /api/password/reset", h.ResetPassword)
 	mux.Handle("POST /api/email/verification", authed(h.StartEmailVerification))
 	mux.HandleFunc("POST /api/email/verify", h.VerifyEmail)
+
+	// TOTP multi-factor authentication
+	mux.Handle("POST /api/mfa/totp", authed(h.BeginTOTP))
+	mux.Handle("POST /api/mfa/totp/confirm", authed(h.ConfirmTOTP))
+	mux.Handle("DELETE /api/mfa/totp", authed(h.DisableTOTP))
 
 	// Account (either mode)
 	mux.Handle("GET /api/me", authed(h.Me))

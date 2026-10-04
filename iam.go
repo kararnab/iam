@@ -72,6 +72,11 @@ type SessionInfo struct {
 	IP         string       `json:"ip,omitempty"`
 	UserAgent  string       `json:"user_agent,omitempty"`
 	Provider   string       `json:"provider,omitempty"`
+
+	// MFA is true when the session was started with a second factor
+	// (MFA.CompleteMFA). Bearer access tokens do not carry it: it is only
+	// set for them with Config.VerifySessionOnAccess.
+	MFA bool `json:"mfa,omitempty"`
 }
 
 // LoginResult is returned by a successful login.

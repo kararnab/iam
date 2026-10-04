@@ -66,6 +66,7 @@ Security fixes go into the latest v2 release.
 | Session secrets, refresh, invite, reset and verification tokens | 256 bits from `crypto/rand`, stored as SHA-256 |
 | Password reset | off until `Recovery.Tokens` is set; tokens expire after 1 hour, requests are throttled, completion revokes every session |
 | Email verification | off until `Recovery.Tokens` is set; tokens expire after 48 hours |
+| MFA (TOTP) | off until `MFA.Store` is set; then required at login for subjects who enrolled; codes ±30 s, never replayable; 5-minute challenges; wrong codes throttled per subject; secrets sealed with AES-GCM |
 | Password hashing | argon2id, m=19 MiB, t=2, p=1, concurrency = GOMAXPROCS |
 | Password length | 12–1024 |
 | Login throttling | on: in-memory, 5 failures per login and 100 per IP within 15 minutes, then back-off from 1s doubling to 15 minutes (`RateLimit.Disabled` turns it off) |
@@ -79,7 +80,8 @@ Security fixes go into the latest v2 release.
 
 - It is **not an OAuth 2.0 authorization server or OpenID provider**: no
   `/authorize` or `/token` endpoints, no client registration, no consent.
-- **No multi-factor authentication or WebAuthn/passkeys** yet.
+- **No WebAuthn or passkeys** yet (TOTP multi-factor authentication is
+  supported).
 - **It sends no email.** Invite, password-reset and verification tokens are
   returned to your code to deliver.
 - **No automatic account linking** by email.

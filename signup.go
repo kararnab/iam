@@ -152,7 +152,7 @@ func (s *service) SignUp(ctx context.Context, req SignUpRequest) (res *LoginResu
 	if err != nil {
 		return fail(reasonFor(err), err)
 	}
-	res, err = s.startSession(ctx, subject, mode, identity.Provider, req.Client)
+	res, err = s.startSession(ctx, subject, mode, identity.Provider, req.Client, "")
 	if err != nil {
 		return fail("session_error", err)
 	}
