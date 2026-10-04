@@ -117,6 +117,10 @@ var (
 	// would make a signed-in user look signed out during an outage.
 	ErrUnavailable = fmt.Errorf("httpauth: %w", iam.ErrUnavailable)
 
+	// ErrMFARequired is passed to the ErrorHandler by RequireMFA. It wraps
+	// iam.ErrMFARequired.
+	ErrMFARequired = fmt.Errorf("httpauth: %w", iam.ErrMFARequired)
+
 	// ErrCSRF is passed to the ErrorHandler when the CSRF token is missing
 	// or wrong.
 	ErrCSRF = errors.New("httpauth: invalid CSRF token")
@@ -458,6 +462,26 @@ func (m *Middleware) RequirePermission(action policy.Action, resourceType string
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RequireMFA rejects anonymous requests (401) and sessions that were not
+// started with a second factor (403, ErrMFARequired). Bearer requests pass
+// only when the service checks sessions on access
+// (iam.Config.VerifySessionOnAccess), since access tokens do not carry the
+// flag.
+func (m *Middleware) RequireMFA(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		st := stateFrom(r.Context())
+		if st == nil {
+			m.unauthenticated(w, r)
+			return
+		}
+		if st.session == nil || !st.session.MFA {
+			m.onError(w, r, http.StatusForbidden, ErrMFARequired)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (m *Middleware) unauthenticated(w http.ResponseWriter, r *http.Request) {

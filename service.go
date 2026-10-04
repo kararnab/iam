@@ -97,7 +97,25 @@ func (s *service) Login(ctx context.Context, req AuthRequest) (*LoginResult, err
 		return fail(subjectID, reasonFor(err), err)
 	}
 
-	res, err := s.startSession(ctx, subject, mode, identity.Provider, req.Client)
+	// With TOTP enrolled, the first factor alone starts no session.
+	if err := s.loginChallenge(ctx, subject, mode, identity.Provider); err != nil {
+		var challenge *MFARequiredError
+		if !errors.As(err, &challenge) {
+			return fail(subject.ID, "store_error", err)
+		}
+		s.cfg.Metrics.Inc(metrics.MFAChallenge)
+		s.audit(ctx, audit.Event{
+			Type:      audit.EventMFAChallenge,
+			SubjectID: subject.ID,
+			Provider:  identity.Provider,
+			ClientIP:  req.Client.IP,
+			Message:   "first factor accepted; second factor required",
+			Attrs:     map[string]string{"mode": string(mode)},
+		})
+		return nil, err
+	}
+
+	res, err := s.startSession(ctx, subject, mode, identity.Provider, req.Client, "")
 	if err != nil {
 		return fail(subject.ID, "session_error", err)
 	}
@@ -125,8 +143,12 @@ func (s *service) modeAllowed(m session.Mode) bool {
 }
 
 // startSession creates a session and the credentials for its mode.
-func (s *service) startSession(ctx context.Context, subject *Subject, mode session.Mode, providerName string, client ClientInfo) (*LoginResult, error) {
+// mfaMethod names the second factor used, if any.
+func (s *service) startSession(ctx context.Context, subject *Subject, mode session.Mode, providerName string, client ClientInfo, mfaMethod string) (*LoginResult, error) {
 	attrs := map[string]string{"provider": providerName}
+	if mfaMethod != "" {
+		attrs["mfa"] = mfaMethod
+	}
 	if client.IP != "" {
 		attrs["ip"] = client.IP
 	}
@@ -617,6 +639,7 @@ func infoFor(sess *session.Session) SessionInfo {
 		IP:         sess.Attrs["ip"],
 		UserAgent:  sess.Attrs["user_agent"],
 		Provider:   sess.Attrs["provider"],
+		MFA:        sess.Attrs["mfa"] != "",
 	}
 }
 

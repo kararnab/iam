@@ -11,6 +11,7 @@ imports the library like any consumer and shows:
 - refresh-token rotation and reuse detection, session listing and "log out
   everywhere else";
 - login throttling, audit logs (slog) and Prometheus metrics;
+- TOTP multi-factor authentication (set `IAM_MFA_KEY`; on in `-dev`);
 - password reset and email verification (the links are logged in `-dev`;
   the demo sends no email);
 - in-memory stores, or PostgreSQL with `IAM_DATABASE_URL`.
@@ -89,6 +90,8 @@ curl -s -c jar2 $B/api/session/register \
 | `GET /api/me`, `GET /api/sessions`, `DELETE /api/sessions/{id}`, `POST /api/sessions/revoke-others`, `POST /api/identities` | either | |
 | `POST /api/password/forgot`, `/api/password/reset`, `/api/email/verify` | – | links are logged in `-dev`, never emailed |
 | `POST /api/email/verification` | either | |
+| `POST /api/login/mfa`, `/api/session/login/mfa` | – | completes a login that answered `401 mfa_required` |
+| `POST /api/mfa/totp`, `/api/mfa/totp/confirm`, `DELETE /api/mfa/totp` | either | enroll, confirm, disable (needs a code) |
 | `GET /api/books`, `GET /api/books/{id}` | either | `read` on `book` |
 | `POST /api/books`, `PUT`/`DELETE /api/books/{id}` | either | `write` on `book` |
 | `POST /api/invites` | either | `create` on `invite` (admin) |
@@ -106,5 +109,5 @@ IAM_TEST_POSTGRES_DSN='postgres://…' go test -race ./...   # end-to-end on Pos
 
 `e2e_test.go` drives the cookie flow (invite, sign-up, CSRF, revoke others,
 logout), the bearer flow (rotation, reuse detection, key rotation, logout),
-throttling, password reset and email verification, permissions and the
-request size limit.
+throttling, password reset and email verification, TOTP enrollment and MFA
+login, permissions and the request size limit.

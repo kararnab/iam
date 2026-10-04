@@ -29,6 +29,19 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
   `pgstore.Tokens`, `storetest.Tokens`, `provider.PasswordSetter`
   (implemented by the password provider), and audit and metric events for
   both flows. The demo app has both flows, with end-to-end tests.
+- **TOTP multi-factor authentication** ([#13](https://github.com/kararnab/iam/issues/13),
+  [docs](docs/mfa.md)): `iam.MFA` (`BeginTOTPEnrollment`,
+  `ConfirmTOTPEnrollment`, `DisableTOTP`, `TOTPEnabled`, `CompleteMFA`,
+  `VerifyMFA`, `RegenerateRecoveryCodes`), implemented by the Service from
+  `New` and enabled by `Config.MFA`. With a confirmed factor, `Login`
+  returns `*MFARequiredError` (a sealed challenge) instead of a session, so
+  callers unaware of MFA fail closed. Codes are replay-protected and
+  throttled; recovery codes are single-use and hashed; secrets are sealed
+  with AES-GCM. `SessionInfo.MFA` and `httpauth.Middleware.RequireMFA` mark
+  and require MFA sessions. New package `mfa` (RFC 6238, recovery codes,
+  `Store`), `memstore.MFA`, `pgstore.MFA`, `storetest.MFA`, and audit and
+  metric events. The demo app has enrollment, MFA login and step-up, with
+  end-to-end tests.
 - **OIDC authorization-code flow** ([#11](https://github.com/kararnab/iam/issues/11),
   [docs](docs/providers.md#signing-in-with-a-redirect-oidccodeflow)):
   `oidc.CodeFlow` (`NewCodeFlow`, `Start`, `Redirect`, `Callback`) with
@@ -55,6 +68,8 @@ the tables it touches, so applications that copy the SQL know when to act.
 - `pgstore` migration 0002 adds **`iam_one_time_tokens`** (password-reset
   and verification tokens). It is in `Migrations` and in
   `SessionMigrations`; no existing table changes.
+- `pgstore` migration 0003 adds **`iam_mfa_totp`** (TOTP factors). It is in
+  `Migrations` and in `SessionMigrations`; no existing table changes.
 
 ## [2.1.0] — 2026-10-03
 

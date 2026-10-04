@@ -53,7 +53,7 @@ together.
 
 Those are excellent tools; choose them when you need only their part, or
 when you want a separate identity server. `iam` doesn't do everything yet.
-If you need MFA or passkeys today, see the
+If you need passkeys today, see the
 [roadmap](#roadmap).
 
 ## Features
@@ -71,6 +71,8 @@ If you need MFA or passkeys today, see the
   "owners can edit").
 - ✉️ **Invite-only sign-up** with single-use, expiring invites, switchable to
   open or closed.
+- 📱 **TOTP multi-factor authentication** with recovery codes, replay
+  protection and step-up checks; logins fail closed until the code is given.
 - 🔐 **Password reset and email verification** with single-use, expiring
   tokens, without revealing which accounts exist.
 - 🚦 **Login throttling** per account and per IP, on by default.
@@ -268,6 +270,7 @@ again revokes the whole session.
   - [Identity providers](docs/providers.md): password, OIDC/Google, your own
   - [Stores](docs/stores.md): users and identities, sessions, invites, one-time tokens (memory, PostgreSQL, Redis, your own)
   - [Password reset and email verification](docs/recovery.md)
+  - [Multi-factor authentication (TOTP)](docs/mfa.md)
   - [Policy](docs/policy.md): RBAC, composition, custom engines
   - [Audit](docs/audit.md): event types and sinks
   - [Metrics](docs/metrics.md): counters and Prometheus
@@ -285,7 +288,6 @@ its [README](examples/demo/README.md) and [OpenAPI spec](examples/demo/openapi.y
 
 Planned, roughly in this order. Upvotes and comments on issues help decide.
 
-- TOTP multi-factor authentication
 - WebAuthn and passkeys
 
 `iam` will not become an OAuth 2.0 authorization server; see

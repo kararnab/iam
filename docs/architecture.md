@@ -61,6 +61,7 @@ github.com/kararnab/iam/v2         Service, Config, New, Subject, store contract
 ├── policy/                        Engine, RBAC, Func, AnyOf, AllOf, DenyAll
 ├── invite/                        Invite, Store, Policy
 ├── onetime/                       password-reset and verification tokens
+├── mfa/                           TOTP (RFC 6238), recovery codes, Store
 ├── ratelimit/                     Limiter, LockoutHooks, Memory
 ├── audit/                         Logger, Event, SlogLogger, Multi
 ├── metrics/                       Recorder, Noop
@@ -114,6 +115,11 @@ immediately) → CSRF token check for unsafe methods → handler →
 **Refresh.** `Service.Refresh` → `session.Manager.Refresh` (atomic rotation;
 a reused token revokes the session) → reload the subject → issue a new
 access token.
+
+**Login with MFA.** As login, but after the subject is loaded, a confirmed
+TOTP factor turns the result into `*MFARequiredError` with a sealed
+challenge → `MFA.CompleteMFA` (throttled code check, atomic replay guard)
+→ session marked `mfa`.
 
 **OIDC redirect sign-in.** `oidc.CodeFlow.Start` (encrypted state cookie,
 PKCE challenge, nonce) → the provider → `CodeFlow.Callback` (state and

@@ -28,6 +28,10 @@ const (
 	PasswordResetFailure     Event = "password_reset_failure"
 	EmailVerified            Event = "email_verified"
 	EmailVerificationFailure Event = "email_verification_failure"
+
+	MFAChallenge Event = "mfa_challenge"
+	MFASuccess   Event = "mfa_success"
+	MFAFailure   Event = "mfa_failure"
 )
 
 // Events lists every Event, for backends that pre-register counters.
@@ -39,6 +43,7 @@ var Events = []Event{
 	Signup, SignupFailure, RateLimited,
 	PasswordResetRequested, PasswordReset, PasswordResetFailure,
 	EmailVerified, EmailVerificationFailure,
+	MFAChallenge, MFASuccess, MFAFailure,
 }
 
 // Recorder counts events. Implementations must be safe for concurrent use

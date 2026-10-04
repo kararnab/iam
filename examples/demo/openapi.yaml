@@ -31,6 +31,8 @@ tags:
     description: Either authentication mode
   - name: recovery
     description: Password reset and email verification
+  - name: mfa
+    description: TOTP multi-factor authentication
   - name: books
   - name: admin
 
@@ -65,6 +67,27 @@ components:
       description: Seconds until another login attempt is accepted.
       schema: { type: integer }
 
+  requestBodies:
+    MFALogin:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [challenge, code]
+            properties:
+              challenge: { type: string, description: From the 401 mfa_required response }
+              code: { type: string, description: A TOTP code or a recovery code }
+    Code:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [code]
+            properties:
+              code: { type: string }
+
   responses:
     BadRequest:
       description: Malformed request
@@ -72,7 +95,11 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
-      description: Missing or invalid credentials
+      description: >-
+        Missing or invalid credentials. After a correct password for an
+        account with TOTP, the body is {"error": "mfa required",
+        "mfa_required": true, "challenge": "...", "expires_at": "..."}:
+        complete the login at .../login/mfa.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -145,6 +172,7 @@ components:
         ip: { type: string }
         user_agent: { type: string }
         provider: { type: string }
+        mfa: { type: boolean, description: Started with a second factor }
 
     SessionListItem:
       allOf:
@@ -491,6 +519,72 @@ paths:
                   subject_id: { type: string }
                   email: { type: string }
         '400': { description: Invalid or expired token }
+
+  # ------------------------------------------------------------------- mfa
+  /api/login/mfa:
+    post:
+      tags: [mfa, bearer]
+      summary: Complete a login that answered 401 mfa_required (bearer tokens)
+      requestBody: { $ref: '#/components/requestBodies/MFALogin' }
+      responses:
+        '200': { description: Tokens, as for /api/login }
+        '401': { description: Invalid code or expired challenge }
+        '429': { description: Too many wrong codes; see Retry-After }
+
+  /api/session/login/mfa:
+    post:
+      tags: [mfa, cookie]
+      summary: Complete a login that answered 401 mfa_required (cookie session)
+      requestBody: { $ref: '#/components/requestBodies/MFALogin' }
+      responses:
+        '200': { description: Session, as for /api/session/login; session.mfa is true }
+        '401': { description: Invalid code or expired challenge }
+        '429': { description: Too many wrong codes; see Retry-After }
+
+  /api/mfa/totp:
+    post:
+      tags: [mfa]
+      summary: Start TOTP enrollment
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      responses:
+        '200':
+          description: The secret, once (base32 and otpauth URI for a QR code)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  uri: { type: string }
+        '409': { description: Already enrolled }
+    delete:
+      tags: [mfa]
+      summary: Turn TOTP off (needs a fresh code)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      requestBody: { $ref: '#/components/requestBodies/Code' }
+      responses:
+        '204': { description: Disabled }
+        '401': { description: Invalid code }
+
+  /api/mfa/totp/confirm:
+    post:
+      tags: [mfa]
+      summary: Confirm enrollment with a first code
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      requestBody: { $ref: '#/components/requestBodies/Code' }
+      responses:
+        '200':
+          description: Recovery codes, shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recovery_codes: { type: array, items: { type: string } }
+        '401': { description: Invalid code }
 
   # ----------------------------------------------------------------- books
   /api/books:

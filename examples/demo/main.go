@@ -118,6 +118,14 @@ func loadConfig(dev bool) (appConfig, error) {
 	if cfg.CSRFKey, err = decodeKey("IAM_CSRF_KEY", get("IAM_CSRF_KEY"), 32); err != nil {
 		return cfg, err
 	}
+	if cfg.MFAKey, err = decodeKey("IAM_MFA_KEY", get("IAM_MFA_KEY"), 32); err != nil {
+		return cfg, err
+	}
+	if len(cfg.MFAKey) == 0 && dev {
+		slog.Warn("IAM_MFA_KEY not set; using a random key (dev mode): enrolled factors stop working on restart")
+		cfg.MFAKey = make([]byte, 32)
+		_, _ = rand.Read(cfg.MFAKey)
+	}
 
 	if len(cfg.SigningKey) == 0 && len(cfg.PasetoKey) == 0 {
 		if !dev {

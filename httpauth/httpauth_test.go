@@ -477,3 +477,26 @@ func TestStoreFailureIsServiceUnavailable(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireMFA(t *testing.T) {
+	e := newEnv(t, httpauth.Config{})
+	h := e.auth.RequireMFA(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }))
+	serve := func(c context.Context) int {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil).WithContext(c))
+		return w.Code
+	}
+	subject := &iam.Subject{ID: "x"}
+	if code := serve(ctx); code != 401 {
+		t.Fatalf("anonymous = %d", code)
+	}
+	if code := serve(httpauth.WithSubject(ctx, subject, &iam.SessionInfo{ID: "s", Mode: session.ModeCookie})); code != 403 {
+		t.Fatalf("password-only session = %d", code)
+	}
+	if code := serve(httpauth.WithSubject(ctx, subject, nil)); code != 403 {
+		t.Fatalf("no session info = %d", code)
+	}
+	if code := serve(httpauth.WithSubject(ctx, subject, &iam.SessionInfo{ID: "s", Mode: session.ModeCookie, MFA: true})); code != 204 {
+		t.Fatalf("MFA session = %d", code)
+	}
+}

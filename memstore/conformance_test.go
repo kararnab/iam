@@ -5,6 +5,7 @@ import (
 
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/session"
 	"github.com/kararnab/iam/v2/storetest"
@@ -19,6 +20,9 @@ func TestConformance(t *testing.T) {
 	})
 	t.Run("tokens", func(t *testing.T) {
 		storetest.Tokens(t, func(*testing.T) onetime.Store { return memstore.NewTokens() })
+	})
+	t.Run("mfa", func(t *testing.T) {
+		storetest.MFA(t, func(*testing.T) mfa.Store { return memstore.NewMFA() })
 	})
 	t.Run("users", func(t *testing.T) {
 		storetest.Users(t, func(*testing.T) storetest.UserStore { return memstore.NewUsers() })

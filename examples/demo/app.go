@@ -42,6 +42,7 @@ type appConfig struct {
 	SigningKey []byte // HS256 key for JWT access tokens (>= 32 bytes)
 	PasetoKey  []byte // optional: use PASETO instead of JWT (32 bytes)
 	CSRFKey    []byte // optional; random if empty
+	MFAKey     []byte // optional: enables TOTP MFA (seals secrets; >= 32 bytes)
 
 	AdminEmail    string // optional: seed an admin account
 	AdminPassword string
@@ -150,6 +151,7 @@ func newApp(cfg appConfig) (*app, error) {
 		Signup:        signup,
 		RateLimit:     iam.RateLimitConfig{PerLogin: perLogin, PerIP: perIP},
 		Recovery:      iam.RecoveryConfig{Tokens: st.tokens},
+		MFA:           mfaConfig(cfg, st),
 		Metrics:       recorder,
 	})
 	if err != nil {
@@ -257,4 +259,12 @@ func logMailer(dev bool) api.Mailer {
 		}
 		slog.Warn("no mailer configured; link dropped", "kind", m.Kind)
 	}
+}
+
+// mfaConfig enables TOTP when an MFA key is configured.
+func mfaConfig(cfg appConfig, st *stores) iam.MFAConfig {
+	if len(cfg.MFAKey) == 0 {
+		return iam.MFAConfig{}
+	}
+	return iam.MFAConfig{Store: st.mfa, Key: cfg.MFAKey, Issuer: "iam demo"}
 }

@@ -68,10 +68,8 @@ type AuthProvider interface {
 	//   - Verify signatures / tokens if applicable
 	//   - Return a stable ProviderID
 	//
-	// TODO:
-	//   - Support partial auth (MFA pending)
-	//   - Step-up / challenge responses
-	//   - Provider-specific error mapping
+	// A second factor is not the provider's concern: IAM asks for it after
+	// the provider succeeds (iam.MFA).
 	Authenticate(
 		ctx context.Context,
 		params map[string]string,

@@ -39,11 +39,15 @@ never contain passwords, tokens or session secrets.
 | `identity_linked` | identity linked to a subject | |
 | `signup` | sign-up succeeded or failed | `invite_id` or `reason` |
 | `invite_created` / `invite_consumed` | invite lifecycle | `invite_id`, `roles`, `invited_by` |
-| `rate_limited` | attempt refused while throttled | `scope`: `login`, `ip`, `reset_login` or `reset_ip` |
+| `rate_limited` | attempt refused while throttled | `scope`: `login`, `ip`, `reset_login`, `reset_ip` or `mfa` |
 | `lockout` | a key just became throttled (logged at WARN) | `scope`, `failures`, `retry_after` |
 | `password_reset_requested` | a reset was requested (issued or not) | `reason` when not issued: `unknown_login`, `subject_disabled`, `rate_limited`, ... |
 | `password_reset` | a reset completed or failed | `token_id`, `sessions_revoked`, or `reason` |
 | `email_verification_requested` / `email_verified` | verification lifecycle | `token_id`, or `reason` on failure |
+| `mfa_challenge` | password accepted, second factor required | `mode` |
+| `mfa_success` / `mfa_failure` | a TOTP or recovery code was checked | `method`, or `reason` |
+| `mfa_enrolled` / `mfa_disabled` | TOTP turned on or off | `method` |
+| `mfa_recovery_code_used` / `mfa_recovery_codes_issued` | recovery codes | `remaining` |
 
 Alert on `refresh_reuse_detected` and on bursts of `lockout`.
 
