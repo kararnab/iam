@@ -15,6 +15,7 @@ import (
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
+	"github.com/kararnab/iam/v2/passkey"
 	"github.com/kararnab/iam/v2/session"
 	"github.com/kararnab/iam/v2/storetest"
 )
@@ -44,7 +45,7 @@ func emptyPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
-		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_schema_migrations,
+		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_passkeys, iam_schema_migrations,
 		iam_schema_migrations_sessions, iam_schema_migrations_users CASCADE`); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestMigrateIsIdempotentAndConcurrent(t *testing.T) {
 		}
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM iam_schema_migrations`).Scan(&n); err != nil || n != 3 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM iam_schema_migrations`).Scan(&n); err != nil || n != 4 {
 		t.Fatalf("migrations recorded = %d, %v", n, err)
 	}
 }
@@ -81,6 +82,9 @@ func TestConformance(t *testing.T) {
 	})
 	t.Run("mfa", func(t *testing.T) {
 		storetest.MFA(t, func(t *testing.T) mfa.Store { return NewMFA(newPool(t)) })
+	})
+	t.Run("passkeys", func(t *testing.T) {
+		storetest.Passkeys(t, func(t *testing.T) passkey.Store { return NewPasskeys(newPool(t)) })
 	})
 	t.Run("users", func(t *testing.T) {
 		storetest.Users(t, func(t *testing.T) storetest.UserStore { return NewUsers(newPool(t)) })
@@ -177,6 +181,12 @@ func TestMigrateSessionsAndUsers(t *testing.T) {
 		storetest.MFA(t, func(t *testing.T) mfa.Store {
 			_, _ = pool.Exec(ctx, `TRUNCATE iam_mfa_totp`)
 			return NewMFA(pool)
+		})
+	})
+	t.Run("passkeys", func(t *testing.T) {
+		storetest.Passkeys(t, func(t *testing.T) passkey.Store {
+			_, _ = pool.Exec(ctx, `TRUNCATE iam_passkeys`)
+			return NewPasskeys(pool)
 		})
 	})
 	t.Run("users", func(t *testing.T) {

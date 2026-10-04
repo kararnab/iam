@@ -44,7 +44,7 @@ together.
 
 | | Login providers | Sessions | Access tokens | Authorization | Runs as |
 |---|:-:|:-:|:-:|:-:|---|
-| **iam** | password, Google, OIDC | ✅ cookie + bearer, rotation | ✅ JWT (+ JWKS), PASETO | ✅ RBAC + your rules | a library |
+| **iam** | password, passkeys, Google, OIDC (+ TOTP MFA) | ✅ cookie + bearer, rotation | ✅ JWT (+ JWKS), PASETO | ✅ RBAC + your rules | a library |
 | golang-jwt/jwt | – | – | ✅ JWT | – | a library |
 | alexedwards/scs | – | ✅ cookie | – | – | a library |
 | markbates/goth | ✅ many OAuth | – | – | – | a library |
@@ -52,9 +52,8 @@ together.
 | Ory Kratos, Keycloak, Zitadel | ✅ | ✅ | ✅ | partly | a separate server |
 
 Those are excellent tools; choose them when you need only their part, or
-when you want a separate identity server. `iam` doesn't do everything yet.
-If you need passkeys today, see the
-[roadmap](#roadmap).
+when you want a separate identity server. What `iam` deliberately does not
+do is listed in [SECURITY.md](SECURITY.md#what-the-library-deliberately-does-not-do).
 
 ## Features
 
@@ -64,7 +63,8 @@ If you need passkeys today, see the
 - 🔁 **Refresh-token reuse detection:** replaying an old refresh token
   revokes the whole session.
 - 🔑 **Sign-in:** argon2id passwords (bcrypt hashes are upgraded
-  automatically), Google and any OpenID Connect issuer (with a ready-made
+  automatically), **passkeys and security keys** (WebAuthn), Google and any
+  OpenID Connect issuer (with a ready-made
   **authorization-code flow: PKCE, state and nonce**), plus **identity
   linking**: one user, many ways to sign in.
 - 🛡️ **Deny-by-default RBAC**, composable with your own rules (for example
@@ -114,6 +114,7 @@ Add only the integrations you use:
 | `github.com/kararnab/iam/pgstore/v2` | PostgreSQL stores and migrations | `jackc/pgx/v5` |
 | `github.com/kararnab/iam/redisstore/v2` | Redis session store and shared rate limiter | `redis/go-redis/v9` |
 | `github.com/kararnab/iam/prometheus/v2` | Prometheus metrics | `prometheus/client_golang` |
+| `github.com/kararnab/iam/webauthn/v2` | passkeys and security keys | `go-webauthn/webauthn` |
 
 Requires Go 1.26 or later. Versions follow semantic versioning. The first
 release is v2.0.0 because this repository's earlier tags belonged to the
@@ -267,10 +268,11 @@ again revokes the whole session.
 
 - [API reference on pkg.go.dev](https://pkg.go.dev/github.com/kararnab/iam/v2)
 - Extension points, each an interface with a reference implementation:
-  - [Identity providers](docs/providers.md): password, OIDC/Google, your own
+  - [Identity providers](docs/providers.md): password, passkeys, OIDC/Google (with the code flow), your own
   - [Stores](docs/stores.md): users and identities, sessions, invites, one-time tokens (memory, PostgreSQL, Redis, your own)
   - [Password reset and email verification](docs/recovery.md)
   - [Multi-factor authentication (TOTP)](docs/mfa.md)
+  - [Passkeys and security keys (WebAuthn)](docs/passkeys.md)
   - [Policy](docs/policy.md): RBAC, composition, custom engines
   - [Audit](docs/audit.md): event types and sinks
   - [Metrics](docs/metrics.md): counters and Prometheus
@@ -286,9 +288,11 @@ its [README](examples/demo/README.md) and [OpenAPI spec](examples/demo/openapi.y
 
 ## Roadmap
 
-Planned, roughly in this order. Upvotes and comments on issues help decide.
-
-- WebAuthn and passkeys
+Everything on the previous roadmap shipped in v2.2.0: the OIDC
+authorization-code flow, password reset and email verification, TOTP
+multi-factor authentication, passkeys, and JWKS publishing. Ideas for what
+comes next are tracked as [issues](https://github.com/kararnab/iam/issues);
+upvotes and comments help decide.
 
 `iam` will not become an OAuth 2.0 authorization server; see
 [SECURITY.md](SECURITY.md#what-the-library-deliberately-does-not-do).

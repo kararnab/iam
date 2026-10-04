@@ -64,7 +64,7 @@ func resetDatabase(t *testing.T, dsn string) {
 	}
 	defer conn.Close(context.Background())
 	if _, err := conn.Exec(context.Background(), `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
-		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_schema_migrations CASCADE`); err != nil {
+		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_passkeys, iam_schema_migrations CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 }
