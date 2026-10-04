@@ -35,6 +35,42 @@ kp.Prune(0)
 - `keys.Provider` is an interface: back it with your KMS or Vault.
   `MemoryProvider` is single-process.
 
+## Publishing keys (JWKS)
+
+With `EdDSA` keys, other services can verify your access tokens without
+being able to mint them. Publish the public keys as a JSON Web Key Set:
+
+```go
+mux.Handle("GET /.well-known/jwks.json", jwt.JWKSHandler(kp, 5*time.Minute))
+```
+
+- Only Ed25519 public keys appear (`kty: OKP`, RFC 8037), active key first.
+  HS256 secrets and private keys never do; an HS256-only provider serves an
+  empty set.
+- The set is built per request, so a rotation shows at once. `maxAge` sets
+  `Cache-Control`; after rotating, keep the old key (do not `Prune`) for at
+  least `maxAge` plus the access-token TTL.
+
+On the verifying side, `jwt.RemoteKeys` is a verification-only
+`keys.Provider` over that URL:
+
+```go
+remote, err := jwt.NewRemoteKeys(ctx, "https://auth.example/.well-known/jwks.json", jwt.RemoteKeysConfig{})
+verifier, _ := jwt.NewVerifier(remote, jwt.Config{Issuer: "auth", Audience: "my-api"})
+```
+
+- It fetches once at start-up (and fails if it cannot), refreshes in the
+  background every `RefreshInterval` (15 minutes), and fetches on an
+  unknown `kid`, at most once per `MinRefreshInterval` (1 minute), so
+  made-up key IDs cannot flood the issuer. A failed or empty fetch keeps the
+  previous keys.
+- Only `https` URLs (`AllowHTTP` is for tests), at most 64 KiB, and only
+  Ed25519 signing keys are kept; every key stays pinned to `EdDSA`, so an
+  HS256 token is rejected whatever its `kid`.
+- `ActiveKey` is the zero key: `RemoteKeys` cannot issue tokens.
+- Providers can look keys up themselves by implementing `keys.Finder`;
+  `keys.Find` (used by both verifiers) prefers it.
+
 ## Verification
 
 The JWT verifier rejects tokens:

@@ -75,8 +75,18 @@ type Provider interface {
 	VerificationKeys() []Key
 }
 
+// Finder is implemented by providers that look keys up themselves, for
+// example to fetch a key they have not seen yet (jwt.RemoteKeys). Find
+// uses it when present.
+type Finder interface {
+	FindKey(id string) (Key, bool)
+}
+
 // Find returns the verification key with the given ID.
 func Find(p Provider, id string) (Key, bool) {
+	if f, ok := p.(Finder); ok {
+		return f.FindKey(id)
+	}
 	for _, k := range p.VerificationKeys() {
 		if k.ID == id {
 			return k, true
