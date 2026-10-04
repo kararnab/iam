@@ -73,14 +73,13 @@ Security fixes go into the latest v2 release.
 | Authorization | none until you configure an engine; nothing allowed implicitly |
 | CSRF | on: cross-origin protection plus a token for cookie sessions |
 | `X-Forwarded-For` | ignored unless `TrustedProxies` is set |
+| OIDC code flow | PKCE S256, state and nonce always; flow cookie AES-GCM, `__Host-`, `HttpOnly`, `SameSite=Lax`, 10 minutes; `returnTo` local paths only |
 
 ## What the library deliberately does not do
 
 - It is **not an OAuth 2.0 authorization server or OpenID provider**: no
   `/authorize` or `/token` endpoints, no client registration, no consent.
 - **No multi-factor authentication or WebAuthn/passkeys** yet.
-- **No OIDC authorization-code flow helpers** (redirects, PKCE, state) yet;
-  the OIDC provider verifies ID tokens you obtain.
 - **It sends no email.** Invite, password-reset and verification tokens are
   returned to your code to deliver.
 - **No automatic account linking** by email.

@@ -8,7 +8,7 @@ require (
 	github.com/kararnab/iam/v2 v2.1.0
 )
 
-require golang.org/x/oauth2 v0.37.0 // indirect
+require golang.org/x/oauth2 v0.37.0
 
 // The in-repo core is used for development and CI. Go ignores replace
 // directives in dependencies, so consumers get the tagged core module.

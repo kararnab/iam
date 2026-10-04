@@ -64,7 +64,8 @@ If you need MFA or passkeys today, see the
 - 🔁 **Refresh-token reuse detection:** replaying an old refresh token
   revokes the whole session.
 - 🔑 **Sign-in:** argon2id passwords (bcrypt hashes are upgraded
-  automatically), Google and any OpenID Connect issuer, plus **identity
+  automatically), Google and any OpenID Connect issuer (with a ready-made
+  **authorization-code flow: PKCE, state and nonce**), plus **identity
   linking**: one user, many ways to sign in.
 - 🛡️ **Deny-by-default RBAC**, composable with your own rules (for example
   "owners can edit").
@@ -284,7 +285,6 @@ its [README](examples/demo/README.md) and [OpenAPI spec](examples/demo/openapi.y
 
 Planned, roughly in this order. Upvotes and comments on issues help decide.
 
-- OIDC authorization-code flow helpers (redirect, PKCE, state)
 - TOTP multi-factor authentication
 - WebAuthn and passkeys
 - Publishing JWKS for EdDSA access tokens

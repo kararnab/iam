@@ -5,8 +5,9 @@
 // provider: signature (keys from the issuer's discovery document), issuer,
 // audience (your client ID), expiry, and, when supplied, the nonce.
 //
-// It does not run the authorization-code flow itself (redirects, PKCE,
-// state); that is planned for a later version.
+// To obtain the ID token in a browser, CodeFlow runs the authorization-code
+// flow with PKCE, state and nonce, and returns the params for
+// iam.Service.Login, SignUp or LinkIdentity.
 package oidc
 
 import (
@@ -17,6 +18,7 @@ import (
 	"slices"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 
 	"github.com/kararnab/iam/v2/provider"
 )
@@ -55,6 +57,8 @@ type Config struct {
 //     expected nonce protects nothing.
 type Provider struct {
 	name     string
+	clientID string
+	endpoint oauth2.Endpoint
 	verifier *gooidc.IDTokenVerifier
 	issuers  []string
 	nonce    bool
@@ -79,7 +83,9 @@ func New(ctx context.Context, cfg Config) (*Provider, error) {
 	// go-oidc checks a single issuer. When several spellings are accepted,
 	// its check is replaced by the explicit list below, never dropped.
 	return &Provider{
-		name: cfg.Name,
+		name:     cfg.Name,
+		clientID: cfg.ClientID,
+		endpoint: op.Endpoint(),
 		verifier: op.Verifier(&gooidc.Config{
 			ClientID:        cfg.ClientID,
 			SkipIssuerCheck: len(cfg.AdditionalIssuers) > 0,

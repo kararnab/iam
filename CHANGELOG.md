@@ -29,6 +29,14 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
   `pgstore.Tokens`, `storetest.Tokens`, `provider.PasswordSetter`
   (implemented by the password provider), and audit and metric events for
   both flows. The demo app has both flows, with end-to-end tests.
+- **OIDC authorization-code flow** ([#11](https://github.com/kararnab/iam/issues/11),
+  [docs](docs/providers.md#signing-in-with-a-redirect-oidccodeflow)):
+  `oidc.CodeFlow` (`NewCodeFlow`, `Start`, `Redirect`, `Callback`) with
+  PKCE S256, state and nonce kept in an AES-GCM-encrypted `__Host-` cookie
+  (no server-side store), an RFC 9207 issuer check, and local-path-only
+  return addresses. `Callback` returns the params for `Service.Login`,
+  `SignUp` or `LinkIdentity`. The `oidc` module now requires
+  `golang.org/x/oauth2` directly (it was already indirect).
 - `docs/stores.md`: using `pgstore` from a `database/sql` application (one
   pgx pool with `stdlib.OpenDBFromPool`, or a second small pool).
 

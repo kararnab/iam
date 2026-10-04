@@ -115,6 +115,11 @@ immediately) → CSRF token check for unsafe methods → handler →
 a reused token revokes the session) → reload the subject → issue a new
 access token.
 
+**OIDC redirect sign-in.** `oidc.CodeFlow.Start` (encrypted state cookie,
+PKCE challenge, nonce) → the provider → `CodeFlow.Callback` (state and
+issuer check, code exchange with the verifier) → `Service.Login` with the
+ID token and the cookie's nonce.
+
 **Sign-up.** `Service.SignUp` → check the invite → register or authenticate
 the identity → consume the invite atomically → `CreateSubject` +
 `LinkIdentity` → start a session. Any failure after registration rolls the
