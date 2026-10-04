@@ -4,17 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-Each module is tagged separately and the versions move together: `v2.1.0`
-for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
-`redisstore/v2.1.0` and `prometheus/v2.1.0` for the sub-modules.
+Each module is tagged separately and the versions move together: `v2.2.0`
+for the core module, and `oidc/v2.2.0`, `paseto/v2.2.0`, `pgstore/v2.2.0`,
+`redisstore/v2.2.0`, `prometheus/v2.2.0` and `webauthn/v2.2.0` for the
+sub-modules.
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-04
+
+Every item of the v2.1 roadmap. Nothing is removed or changed
+incompatibly: `iam.Service` keeps its methods (the new features are the
+separate interfaces `iam.Recovery` and `iam.MFA`, implemented by the
+Service from `New`), and every new feature is off until configured. The
+sub-modules require core `v2.2.0`; `webauthn` is a new module.
+
 ### Added
 
-- `pgstore.SessionMigrations` and `pgstore.MigrateSessions`: only the session
-  and invite tables (`iam_sessions`, `iam_rotated_tokens`, `iam_invites`),
-  for applications that implement `iam.UserStore` over their own tables.
+- `pgstore.SessionMigrations` and `pgstore.MigrateSessions`: only the tables
+  that do not hold pgstore's own users (`iam_sessions`, `iam_rotated_tokens`,
+  `iam_invites`, and the new `iam_one_time_tokens`, `iam_mfa_totp` and
+  `iam_passkeys`), for applications that implement `iam.UserStore` over
+  their own tables.
   `pgstore.UserMigrations` and `pgstore.MigrateUsers` hold the user tables.
   Each partial set has its own tracker table; mixing a partial set with
   `Migrate` on one database returns `pgstore.ErrMigrationSetConflict`
@@ -253,6 +264,7 @@ requires for major versions above 1.
   ever committed**: `.env` (`JWT_SECRET_KEY`) was tracked in git history
   before this release.
 
-[Unreleased]: https://github.com/kararnab/iam/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/kararnab/iam/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/kararnab/iam/releases/tag/v2.2.0
 [2.1.0]: https://github.com/kararnab/iam/releases/tag/v2.1.0
 [2.0.0]: https://github.com/kararnab/iam/releases/tag/v2.0.0
