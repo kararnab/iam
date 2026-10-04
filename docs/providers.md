@@ -75,9 +75,52 @@ The **nonce must come from your server**: generate it when you start the
 sign-in, keep it in server-side state, and put it into `params["nonce"]`
 yourself. A nonce taken from the client request protects nothing.
 
-The provider verifies ID tokens; it does not run the authorization-code
-redirect flow. Use `golang.org/x/oauth2` (or your front end) to obtain the ID
-token. Code-flow helpers are planned.
+#### Signing in with a redirect: `oidc.CodeFlow`
+
+The provider verifies ID tokens. To obtain one in a browser, `CodeFlow` runs
+the authorization-code flow with **PKCE (S256), state and nonce**:
+
+```go
+flow, err := oidc.NewCodeFlow(g, oidc.CodeFlowConfig{
+    RedirectURL:  "https://app.example/auth/google/callback", // registered at Google
+    ClientSecret: googleClientSecret,                         // empty for a public client
+    Key:          flowKey,                                    // >= 32 bytes, same on every instance
+    AuthParams:   map[string]string{"prompt": "select_account"},
+})
+
+mux.HandleFunc("GET /auth/google", func(w http.ResponseWriter, r *http.Request) {
+    if err := flow.Redirect(w, r, r.URL.Query().Get("next")); err != nil {
+        http.Error(w, "bad request", http.StatusBadRequest) // next was not a local path
+    }
+})
+mux.HandleFunc("GET /auth/google/callback", func(w http.ResponseWriter, r *http.Request) {
+    cb, err := flow.Callback(w, r)
+    if err != nil { /* ErrFlowState: start again; *AuthorizationError: the user cancelled */ }
+    res, err := svc.Login(r.Context(), iam.AuthRequest{
+        Provider: g.Name(), Params: cb.Params, Client: auth.ClientInfo(r),
+    })
+    if errors.Is(err, iam.ErrUnknownIdentity) { /* offer sign-up: svc.SignUp with the same Params */ }
+    auth.StartSession(w, res)
+    http.Redirect(w, r, cb.ReturnTo, http.StatusSeeOther)
+})
+```
+
+- State, nonce and the PKCE verifier live in a short-lived (10 minutes by
+  default), **AES-GCM-encrypted** `__Host-` cookie: `HttpOnly`, `Secure`,
+  `SameSite=Lax` (the callback is a top-level navigation). No server-side
+  store is needed, and any instance with the same `Key` can take the
+  callback. Starting another sign-in in the same browser replaces it.
+- `Callback` always clears the cookie, compares `state` in constant time,
+  checks the `iss` parameter when the provider sends one (RFC 9207), and
+  exchanges the code with the verifier. It returns `Params` (`id_token`,
+  and the `nonce` from the cookie, never from the request) for
+  `Service.Login`, `SignUp` or `LinkIdentity`, so throttling, audit and the
+  ID-token checks all apply.
+- `ReturnTo` must be a local path (`/settings`); anything that a browser
+  could read as another site is rejected by `Start` with
+  `ErrInvalidReturnTo`, so the flow cannot be used as an open redirect.
+- `RedirectURL` must be `https`, unless `Insecure` is set for local
+  development (the cookie then loses `Secure` and the `__Host-` prefix).
 
 ## Writing a provider
 
