@@ -62,6 +62,7 @@ github.com/kararnab/iam/v2         Service, Config, New, Subject, store contract
 ├── invite/                        Invite, Store, Policy
 ├── onetime/                       password-reset and verification tokens
 ├── mfa/                           TOTP (RFC 6238), recovery codes, Store
+├── passkey/                       WebAuthn Credential, Store
 ├── ratelimit/                     Limiter, LockoutHooks, Memory
 ├── audit/                         Logger, Event, SlogLogger, Multi
 ├── metrics/                       Recorder, Noop
@@ -75,6 +76,7 @@ github.com/kararnab/iam/v2         Service, Config, New, Subject, store contract
 ├── pgstore/     (module)          PostgreSQL stores + migrations
 ├── redisstore/  (module)          Redis sessions + limiter
 ├── prometheus/  (module)          Prometheus recorder
+├── webauthn/    (module)          passkeys: ceremonies + provider (go-webauthn)
 └── examples/demo/ (module)        demo app, imports everything like a consumer
 ```
 

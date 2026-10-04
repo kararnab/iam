@@ -29,6 +29,16 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
   `pgstore.Tokens`, `storetest.Tokens`, `provider.PasswordSetter`
   (implemented by the password provider), and audit and metric events for
   both flows. The demo app has both flows, with end-to-end tests.
+- **Passkeys and security keys** ([#14](https://github.com/kararnab/iam/issues/14),
+  [docs](docs/passkeys.md)): new module `github.com/kararnab/iam/webauthn/v2`
+  (on `go-webauthn/webauthn`), an identity provider with
+  `BeginRegistration`/`FinishRegistration`, username-less
+  `BeginLogin` + `Service.Login`, `Credentials` and `RemoveCredential`.
+  Each credential is a linked identity; user verification and resident
+  keys are required; cloned authenticators (counter regressions) are
+  rejected; ceremony state is sealed, so no store is needed. Core package
+  `passkey` (`Credential`, `Store`), `memstore.Passkeys`,
+  `pgstore.Passkeys`, `storetest.Passkeys`.
 - **TOTP multi-factor authentication** ([#13](https://github.com/kararnab/iam/issues/13),
   [docs](docs/mfa.md)): `iam.MFA` (`BeginTOTPEnrollment`,
   `ConfirmTOTPEnrollment`, `DisableTOTP`, `TOTPEnabled`, `CompleteMFA`,
@@ -70,6 +80,9 @@ the tables it touches, so applications that copy the SQL know when to act.
   `SessionMigrations`; no existing table changes.
 - `pgstore` migration 0003 adds **`iam_mfa_totp`** (TOTP factors). It is in
   `Migrations` and in `SessionMigrations`; no existing table changes.
+- `pgstore` migration 0004 adds **`iam_passkeys`** (WebAuthn credentials).
+  It is in `Migrations` and in `SessionMigrations`; no existing table
+  changes.
 
 ## [2.1.0] — 2026-10-03
 

@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [".", oidc, paseto, pgstore, redisstore, prometheus, examples/demo]
+        module: [".", oidc, paseto, pgstore, redisstore, prometheus, webauthn, examples/demo]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

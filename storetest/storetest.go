@@ -23,6 +23,7 @@ import (
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
+	"github.com/kararnab/iam/v2/passkey"
 	"github.com/kararnab/iam/v2/password"
 	"github.com/kararnab/iam/v2/provider"
 	"github.com/kararnab/iam/v2/session"
@@ -530,6 +531,82 @@ func MFA(t *testing.T, newStore func(t *testing.T) mfa.Store) {
 		wg.Wait()
 		if wins != 1 {
 			t.Fatalf("%d concurrent uses won", wins)
+		}
+	})
+}
+
+// Passkeys runs the passkey.Store conformance tests.
+func Passkeys(t *testing.T, newStore func(t *testing.T) passkey.Store) {
+	cred := func(id, subject string, created time.Time) *passkey.Credential {
+		return &passkey.Credential{
+			ID: []byte(id), SubjectID: subject, Name: "laptop", PublicKey: []byte("cose-key-" + id),
+			AttestationType: "none", AttestationFormat: "none", AAGUID: make([]byte, 16),
+			Transports: []string{"internal", "hybrid"}, SignCount: 7,
+			UserPresent: true, UserVerified: true, BackupEligible: true, BackupState: true, CreatedAt: created,
+		}
+	}
+
+	t.Run("create, get, list", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Create(ctx, cred("c1", "alice", base)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Create(ctx, cred("c1", "bob", base)); !errors.Is(err, passkey.ErrConflict) {
+			t.Fatalf("duplicate ID: %v", err)
+		}
+		_ = s.Create(ctx, cred("c2", "alice", base.Add(time.Minute)))
+		_ = s.Create(ctx, cred("c3", "bob", base))
+
+		got, err := s.Get(ctx, []byte("c1"))
+		if err != nil || got.SubjectID != "alice" || string(got.PublicKey) != "cose-key-c1" || got.SignCount != 7 ||
+			!slices.Equal(got.Transports, []string{"internal", "hybrid"}) || !got.UserVerified || !got.BackupEligible ||
+			!got.BackupState || got.Name != "laptop" || len(got.AAGUID) != 16 || !sameTime(got.CreatedAt, base) || !got.LastUsedAt.IsZero() {
+			t.Fatalf("get = %+v, %v", got, err)
+		}
+		if _, err := s.Get(ctx, []byte("missing")); !errors.Is(err, passkey.ErrNotFound) {
+			t.Fatalf("missing: %v", err)
+		}
+		list, err := s.ListBySubject(ctx, "alice")
+		if err != nil || len(list) != 2 || string(list[0].ID) != "c1" || string(list[1].ID) != "c2" {
+			t.Fatalf("list = %v, %v", list, err)
+		}
+		if none, err := s.ListBySubject(ctx, "nobody"); err != nil || len(none) != 0 {
+			t.Fatalf("list for nobody = %v, %v", none, err)
+		}
+	})
+
+	t.Run("touch", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.Create(ctx, cred("c1", "alice", base))
+		if err := s.Touch(ctx, []byte("c1"), 9, false, base.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := s.Get(ctx, []byte("c1"))
+		if got.SignCount != 9 || got.BackupState || !sameTime(got.LastUsedAt, base.Add(time.Hour)) {
+			t.Fatalf("after touch = %+v", got)
+		}
+		if err := s.Touch(ctx, []byte("missing"), 1, false, base); !errors.Is(err, passkey.ErrNotFound) {
+			t.Fatalf("touch missing: %v", err)
+		}
+	})
+
+	t.Run("delete only the subject's own", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.Create(ctx, cred("c1", "alice", base))
+		if err := s.Delete(ctx, "bob", []byte("c1")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Get(ctx, []byte("c1")); err != nil {
+			t.Fatal("another subject deleted the credential")
+		}
+		if err := s.Delete(ctx, "alice", []byte("c1")); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Get(ctx, []byte("c1")); !errors.Is(err, passkey.ErrNotFound) {
+			t.Fatalf("after delete: %v", err)
+		}
+		if err := s.Delete(ctx, "alice", []byte("c1")); err != nil {
+			t.Fatalf("second delete: %v", err)
 		}
 	})
 }

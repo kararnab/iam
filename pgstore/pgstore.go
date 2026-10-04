@@ -48,7 +48,8 @@ var Migrations embed.FS
 
 // SessionMigrations holds the migrations for every table that does not
 // hold pgstore's own users (iam_sessions, iam_rotated_tokens, iam_invites,
-// iam_one_time_tokens, iam_mfa_totp), under migrations/sessions/. MigrateSessions applies it.
+// iam_one_time_tokens, iam_mfa_totp, iam_passkeys), under
+// migrations/sessions/. MigrateSessions applies it.
 //
 //go:embed migrations/sessions/*.sql
 var SessionMigrations embed.FS

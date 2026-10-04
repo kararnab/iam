@@ -30,6 +30,7 @@ rejected with `iam.ErrUnknownIdentity`, unless it is used in `SignUp`.
 | Username and password | `password.NewProvider` (core) | `username`, `password` |
 | Any OpenID Connect issuer | `oidc.New` (module `iam/oidc`) | `id_token`, optional `nonce` |
 | Google | `oidc.NewGoogle` | `id_token`, optional `nonce` |
+| Passkeys and security keys (WebAuthn) | `webauthn.New` (module `iam/webauthn`, [docs](passkeys.md)) | `state`, `response` |
 
 ### Password
 
