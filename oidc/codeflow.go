@@ -42,7 +42,7 @@ var (
 
 // AuthorizationError is returned by Callback when the identity provider
 // redirected back with an error, for example "access_denied" when the user
-// cancelled. It wraps ErrAuthorizationDenied.
+// canceled. It wraps ErrAuthorizationDenied.
 type AuthorizationError struct {
 	Code        string // the "error" parameter
 	Description string // the "error_description" parameter, if any

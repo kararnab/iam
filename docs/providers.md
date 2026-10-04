@@ -95,7 +95,7 @@ mux.HandleFunc("GET /auth/google", func(w http.ResponseWriter, r *http.Request) 
 })
 mux.HandleFunc("GET /auth/google/callback", func(w http.ResponseWriter, r *http.Request) {
     cb, err := flow.Callback(w, r)
-    if err != nil { /* ErrFlowState: start again; *AuthorizationError: the user cancelled */ }
+    if err != nil { /* ErrFlowState: start again; *AuthorizationError: the user canceled */ }
     res, err := svc.Login(r.Context(), iam.AuthRequest{
         Provider: g.Name(), Params: cb.Params, Client: auth.ClientInfo(r),
     })

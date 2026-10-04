@@ -244,7 +244,7 @@ func TestCodeFlowRejects(t *testing.T) {
 			t.Fatalf("err = %v", err)
 		}
 	})
-	t.Run("user cancelled", func(t *testing.T) {
+	t.Run("user canceled", func(t *testing.T) {
 		authURL, cookie := start(t, f, "")
 		q := a.authorize(authURL)
 		q.Del("code")
