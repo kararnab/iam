@@ -51,6 +51,10 @@ type appConfig struct {
 	OpenSignup     bool   // default is invite-only
 
 	TrustedProxies []string // CIDRs whose X-Forwarded-For is trusted
+
+	// Mailer delivers password-reset and verification links. Default: log
+	// them in -dev, drop them otherwise (the demo sends no email).
+	Mailer api.Mailer
 }
 
 type app struct {
@@ -145,6 +149,7 @@ func newApp(cfg appConfig) (*app, error) {
 		Policy:        rbac,
 		Signup:        signup,
 		RateLimit:     iam.RateLimitConfig{PerLogin: perLogin, PerIP: perIP},
+		Recovery:      iam.RecoveryConfig{Tokens: st.tokens},
 		Metrics:       recorder,
 	})
 	if err != nil {
@@ -169,8 +174,12 @@ func newApp(cfg appConfig) (*app, error) {
 		return nil, err
 	}
 
+	mailer := cfg.Mailer
+	if mailer == nil {
+		mailer = logMailer(cfg.Dev)
+	}
 	handler := api.NewRouter(
-		api.NewHandlers(svc, auth),
+		api.NewHandlers(svc, auth, mailer),
 		api.NewBookHandlers(books.NewMemoryStore()),
 		api.NewKeyRotationHandler(keyProvider),
 	)
@@ -235,4 +244,17 @@ func buildTokens(cfg appConfig) (token.Issuer, token.Verifier, *keys.MemoryProvi
 		return nil, nil, nil, err
 	}
 	return iss, ver, kp, nil
+}
+
+// logMailer stands in for email. In -dev it logs the link's token so the
+// flows can be tried locally; otherwise it drops it, because a token in a
+// log is a credential in a log.
+func logMailer(dev bool) api.Mailer {
+	return func(_ context.Context, m api.Mail) {
+		if dev {
+			slog.Info("demo mail (not sent)", "kind", m.Kind, "to", m.To, "token", m.Token)
+			return
+		}
+		slog.Warn("no mailer configured; link dropped", "kind", m.Kind)
+	}
 }

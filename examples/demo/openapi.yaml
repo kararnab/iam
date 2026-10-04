@@ -29,6 +29,8 @@ tags:
     description: Cookie sessions for browsers
   - name: account
     description: Either authentication mode
+  - name: recovery
+    description: Password reset and email verification
   - name: books
   - name: admin
 
@@ -403,6 +405,92 @@ paths:
         '204': { description: Linked }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { description: The identity belongs to another account }
+
+  # -------------------------------------------------------------- recovery
+  /api/password/forgot:
+    post:
+      tags: [recovery]
+      summary: Request a password-reset link
+      description: >-
+        Always 202 with the same body, whether or not the account exists. The
+        link's token is delivered to the login's address (the demo logs it in
+        -dev). Throttled per login and per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+      responses:
+        '202': { description: Accepted }
+        '429': { description: Too many requests; see Retry-After }
+
+  /api/password/reset:
+    post:
+      tags: [recovery]
+      summary: Set a new password with a reset token
+      description: Signs the account out of every session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string }
+      responses:
+        '204': { description: Password changed }
+        '400': { description: Invalid or expired token, or the password breaks the policy }
+
+  /api/email/verification:
+    post:
+      tags: [recovery]
+      summary: Send a verification link to one of my addresses
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/CSRFToken' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        '202': { description: Sent }
+        '400': { description: Not an email address }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/email/verify:
+    post:
+      tags: [recovery]
+      summary: Verify an address with a verification token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200':
+          description: The verified address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject_id: { type: string }
+                  email: { type: string }
+        '400': { description: Invalid or expired token }
 
   # ----------------------------------------------------------------- books
   /api/books:

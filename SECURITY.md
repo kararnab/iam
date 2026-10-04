@@ -63,7 +63,9 @@ Security fixes go into the latest v2 release.
 | Bearer session timeouts | 14 days idle, 30 days absolute |
 | Access-token lifetime | 10 minutes, leeway 30 seconds (max 2 minutes) |
 | Refresh-token reuse grace | 0 (any reuse revokes) |
-| Session secrets, refresh and invite tokens | 256 bits from `crypto/rand`, stored as SHA-256 |
+| Session secrets, refresh, invite, reset and verification tokens | 256 bits from `crypto/rand`, stored as SHA-256 |
+| Password reset | off until `Recovery.Tokens` is set; tokens expire after 1 hour, requests are throttled, completion revokes every session |
+| Email verification | off until `Recovery.Tokens` is set; tokens expire after 48 hours |
 | Password hashing | argon2id, m=19 MiB, t=2, p=1, concurrency = GOMAXPROCS |
 | Password length | 12–1024 |
 | Login throttling | on: in-memory, 5 failures per login and 100 per IP within 15 minutes, then back-off from 1s doubling to 15 minutes (`RateLimit.Disabled` turns it off) |
@@ -79,8 +81,8 @@ Security fixes go into the latest v2 release.
 - **No multi-factor authentication or WebAuthn/passkeys** yet.
 - **No OIDC authorization-code flow helpers** (redirects, PKCE, state) yet;
   the OIDC provider verifies ID tokens you obtain.
-- **No password reset or email verification flows,** and it sends no
-  email. Invite tokens are returned to your code to deliver.
+- **It sends no email.** Invite, password-reset and verification tokens are
+  returned to your code to deliver.
 - **No automatic account linking** by email.
 - **No published JWKS** for asymmetric access tokens, and no DPoP or
   sender-constrained tokens.

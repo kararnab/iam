@@ -21,6 +21,7 @@ import (
 
 	"github.com/kararnab/iam/v2"
 	"github.com/kararnab/iam/v2/invite"
+	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/password"
 	"github.com/kararnab/iam/v2/provider"
 	"github.com/kararnab/iam/v2/session"
@@ -290,6 +291,115 @@ func Invites(t *testing.T, newStore func(t *testing.T) invite.Store) {
 		}
 		if _, err := s.GetByTokenHash(ctx, hash); !errors.Is(err, invite.ErrNotFound) {
 			t.Fatalf("after delete: %v", err)
+		}
+	})
+}
+
+// Tokens runs the onetime.Store conformance tests.
+func Tokens(t *testing.T, newStore func(t *testing.T) onetime.Store) {
+	newToken := func(id, subject string, purpose onetime.Purpose) (*onetime.Token, []byte) {
+		_, hash := session.NewSecret()
+		return &onetime.Token{
+			ID: id, TokenHash: hash, Purpose: purpose, SubjectID: subject,
+			Login: "ana@example.com", Email: "ana@example.com",
+			CreatedAt: base, ExpiresAt: base.Add(time.Hour),
+		}, hash
+	}
+
+	t.Run("create, get, consume once", func(t *testing.T) {
+		s := newStore(t)
+		tok, hash := newToken("t1", "alice", onetime.PasswordReset)
+		if err := s.Create(ctx, tok); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Create(ctx, tok); err == nil {
+			t.Fatal("duplicate token accepted")
+		}
+		got, err := s.GetByTokenHash(ctx, hash)
+		if err != nil || got.ID != "t1" || got.SubjectID != "alice" || got.Purpose != onetime.PasswordReset ||
+			got.Login != "ana@example.com" || got.Email != "ana@example.com" || !bytes.Equal(got.TokenHash, hash) ||
+			!sameTime(got.CreatedAt, base) || !sameTime(got.ExpiresAt, tok.ExpiresAt) || !got.UsedAt.IsZero() {
+			t.Fatalf("get = %+v, %v", got, err)
+		}
+		if _, err := s.Consume(ctx, hash, onetime.EmailVerification, base); !errors.Is(err, onetime.ErrInvalid) {
+			t.Fatalf("consume for another purpose: %v", err)
+		}
+		used, err := s.Consume(ctx, hash, onetime.PasswordReset, base)
+		if err != nil || used.ID != "t1" || used.Login != "ana@example.com" || !sameTime(used.UsedAt, base) {
+			t.Fatalf("consume = %+v, %v", used, err)
+		}
+		if _, err := s.Consume(ctx, hash, onetime.PasswordReset, base); !errors.Is(err, onetime.ErrInvalid) {
+			t.Fatalf("second consume: %v", err)
+		}
+		if got, err := s.GetByTokenHash(ctx, hash); err != nil || got.UsedAt.IsZero() {
+			t.Fatalf("get after consume = %+v, %v", got, err)
+		}
+		_, other := session.NewSecret()
+		if _, err := s.GetByTokenHash(ctx, other); !errors.Is(err, onetime.ErrNotFound) {
+			t.Fatalf("unknown: %v", err)
+		}
+		if _, err := s.Consume(ctx, other, onetime.PasswordReset, base); !errors.Is(err, onetime.ErrInvalid) {
+			t.Fatalf("consume unknown: %v", err)
+		}
+	})
+
+	t.Run("expired", func(t *testing.T) {
+		s := newStore(t)
+		tok, hash := newToken("t2", "alice", onetime.EmailVerification)
+		_ = s.Create(ctx, tok)
+		if _, err := s.Consume(ctx, hash, onetime.EmailVerification, base.Add(time.Hour)); !errors.Is(err, onetime.ErrInvalid) {
+			t.Fatalf("consume at expiry: %v", err)
+		}
+	})
+
+	t.Run("concurrent consume has one winner", func(t *testing.T) {
+		s := newStore(t)
+		tok, hash := newToken("t3", "alice", onetime.PasswordReset)
+		_ = s.Create(ctx, tok)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		wins := 0
+		for range 10 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if _, err := s.Consume(ctx, hash, onetime.PasswordReset, base); err == nil {
+					mu.Lock()
+					wins++
+					mu.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+		if wins != 1 {
+			t.Fatalf("%d consumers won", wins)
+		}
+	})
+
+	t.Run("delete by subject and purpose", func(t *testing.T) {
+		s := newStore(t)
+		reset, resetHash := newToken("t4", "alice", onetime.PasswordReset)
+		verify, verifyHash := newToken("t5", "alice", onetime.EmailVerification)
+		bob, bobHash := newToken("t6", "bob", onetime.PasswordReset)
+		for _, tok := range []*onetime.Token{reset, verify, bob} {
+			if err := s.Create(ctx, tok); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := s.DeleteBySubject(ctx, "alice", onetime.PasswordReset); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DeleteBySubject(ctx, "nobody", onetime.PasswordReset); err != nil {
+			t.Fatalf("delete for unknown subject: %v", err)
+		}
+		if _, err := s.GetByTokenHash(ctx, resetHash); !errors.Is(err, onetime.ErrNotFound) {
+			t.Fatalf("deleted token: %v", err)
+		}
+		if _, err := s.GetByTokenHash(ctx, verifyHash); err != nil {
+			t.Fatalf("other purpose deleted: %v", err)
+		}
+		if _, err := s.GetByTokenHash(ctx, bobHash); err != nil {
+			t.Fatalf("other subject deleted: %v", err)
 		}
 	})
 }

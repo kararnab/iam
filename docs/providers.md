@@ -48,7 +48,8 @@ p, _ := password.NewProvider(credentialStore, hasher, password.DefaultPolicy)
 - `password.Policy` sets length rules: at least 12 characters, at most 1024
   bytes by default.
 - The provider implements `provider.Registrar`, which is what lets
-  `Service.SignUp` create credentials.
+  `Service.SignUp` create credentials, and `provider.PasswordSetter`, which
+  lets [password reset](recovery.md) replace them.
 
 Wrong passwords return errors that wrap `provider.ErrInvalidCredentials`
 (also exported as `iam.ErrInvalidCredentials`). Only those errors count

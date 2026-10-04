@@ -44,7 +44,10 @@ type Provider struct {
 	dummy  string // hash verified when the login does not exist
 }
 
-var _ provider.Registrar = (*Provider)(nil)
+var (
+	_ provider.Registrar      = (*Provider)(nil)
+	_ provider.PasswordSetter = (*Provider)(nil)
+)
 
 // NewProvider returns a password provider. A zero Policy means DefaultPolicy.
 func NewProvider(creds CredentialStore, hasher Hasher, policy Policy) (*Provider, error) {
@@ -136,6 +139,23 @@ func (p *Provider) Register(ctx context.Context, params map[string]string) (*pro
 // Unregister implements provider.Registrar.
 func (p *Provider) Unregister(ctx context.Context, providerID string) error {
 	return p.creds.DeleteCredential(ctx, providerID)
+}
+
+// CheckPassword implements provider.PasswordSetter. It returns an error
+// wrapping ErrTooShort or ErrTooLong for policy violations.
+func (p *Provider) CheckPassword(password string) error { return p.policy.Check(password) }
+
+// SetPassword implements provider.PasswordSetter. It returns iam.ErrNotFound
+// if the login has no credential.
+func (p *Provider) SetPassword(ctx context.Context, providerID, password string) error {
+	if err := p.policy.Check(password); err != nil {
+		return err
+	}
+	encoded, err := p.hasher.Hash(ctx, password)
+	if err != nil {
+		return err
+	}
+	return p.creds.UpdateCredential(ctx, NormalizeLogin(providerID), encoded)
 }
 
 func identity(login string) *provider.Identity {

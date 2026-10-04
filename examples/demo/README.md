@@ -11,6 +11,8 @@ imports the library like any consumer and shows:
 - refresh-token rotation and reuse detection, session listing and "log out
   everywhere else";
 - login throttling, audit logs (slog) and Prometheus metrics;
+- password reset and email verification (the links are logged in `-dev`;
+  the demo sends no email);
 - in-memory stores, or PostgreSQL with `IAM_DATABASE_URL`.
 
 ## Run
@@ -85,6 +87,8 @@ curl -s -c jar2 $B/api/session/register \
 | `POST /api/session/login`, `/api/session/register` | – | sets the session cookie |
 | `GET /api/session`, `POST /api/session/logout` | cookie | |
 | `GET /api/me`, `GET /api/sessions`, `DELETE /api/sessions/{id}`, `POST /api/sessions/revoke-others`, `POST /api/identities` | either | |
+| `POST /api/password/forgot`, `/api/password/reset`, `/api/email/verify` | – | links are logged in `-dev`, never emailed |
+| `POST /api/email/verification` | either | |
 | `GET /api/books`, `GET /api/books/{id}` | either | `read` on `book` |
 | `POST /api/books`, `PUT`/`DELETE /api/books/{id}` | either | `write` on `book` |
 | `POST /api/invites` | either | `create` on `invite` (admin) |
@@ -102,4 +106,5 @@ IAM_TEST_POSTGRES_DSN='postgres://…' go test -race ./...   # end-to-end on Pos
 
 `e2e_test.go` drives the cookie flow (invite, sign-up, CSRF, revoke others,
 logout), the bearer flow (rotation, reuse detection, key rotation, logout),
-throttling, permissions and the request size limit.
+throttling, password reset and email verification, permissions and the
+request size limit.
