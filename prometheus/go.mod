@@ -3,7 +3,7 @@ module github.com/kararnab/iam/prometheus/v2
 go 1.26.0
 
 require (
-	github.com/kararnab/iam/v2 v2.1.0
+	github.com/kararnab/iam/v2 v2.2.0
 	github.com/prometheus/client_golang v1.24.1
 )
 
