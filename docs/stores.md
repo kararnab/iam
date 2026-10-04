@@ -10,6 +10,7 @@ live in `memstore` (core), and durable ones in the `pgstore` and
 | `password.CredentialStore` | password hashes by login | `Users` | `Users` | – |
 | `session.Store` | sessions and rotated token hashes | `Sessions` | `Sessions` | `Sessions` |
 | `invite.Store` | invites | `Invites` | `Invites` | – |
+| `onetime.Store` | password-reset and verification tokens | `Tokens` | `Tokens` | – |
 | `ratelimit.Limiter` | failure counters | `ratelimit.Memory` | – | `Limiter` |
 
 Users are **application-owned**. If you already have a users table,
@@ -36,14 +37,15 @@ cfg := iam.Config{
   are safe. You can also copy the SQL into your own migration tool.
 - Tables are prefixed `iam_`. `iam_sessions.subject_id` deliberately has no
   foreign key, so sessions also work with your own users table.
-- Run `(*pgstore.Sessions).PurgeExpired` periodically. Expired sessions are
-  rejected anyway; this only reclaims space.
+- Run `(*pgstore.Sessions).PurgeExpired` and `(*pgstore.Tokens).PurgeExpired`
+  periodically. Expired sessions and tokens are rejected anyway; this only
+  reclaims space.
 
 ### With your own user table
 
 If you implement `iam.UserStore` over your own tables, you need only the
-session and invite tables (`iam_sessions`, `iam_rotated_tokens`,
-`iam_invites`). Create just those:
+tables that do not hold users (`iam_sessions`, `iam_rotated_tokens`,
+`iam_invites`, `iam_one_time_tokens`). Create just those:
 
 ```go
 if err := pgstore.MigrateSessions(ctx, pool); err != nil { ... }
@@ -101,7 +103,8 @@ Read the interface documentation. The contracts that matter most:
   `UPDATE … WHERE id = $1 AND token_hash = $2`.
 - `GetByTokenHash` must also find **rotated** hashes (with `RotatedAt` set)
   until the session is deleted. That is how reuse is detected.
-- **`invite.Store.Consume` must be atomic:** at most one caller wins.
+- **`invite.Store.Consume` and `onetime.Store.Consume` must be atomic:** at
+  most one caller wins.
 - Return the package's sentinel errors (`session.ErrNotFound`,
   `session.ErrConflict`, `iam.ErrNotFound`, `iam.ErrConflict`,
   `invite.ErrInvalid`, ...), because callers branch on them.
@@ -114,6 +117,7 @@ Then run the conformance suite, which every built-in store passes:
 func TestMyStores(t *testing.T) {
     storetest.Sessions(t, func(t *testing.T) session.Store { return newMySessions(t) })
     storetest.Invites(t, func(t *testing.T) invite.Store { return newMyInvites(t) })
+    storetest.Tokens(t, func(t *testing.T) onetime.Store { return newMyTokens(t) })
     storetest.Users(t, func(t *testing.T) storetest.UserStore { return newMyUsers(t) })
 }
 ```

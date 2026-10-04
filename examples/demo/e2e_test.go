@@ -9,9 +9,12 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/kararnab/iam/examples/demo/internal/api"
 )
 
 const (
@@ -23,6 +26,12 @@ const (
 // IAM_TEST_POSTGRES_DSN is set (tables are reset per test).
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return newTestServerWith(t, nil)
+}
+
+// newTestServerWith is newTestServer with a mailer.
+func newTestServerWith(t *testing.T, mailer api.Mailer) *httptest.Server {
+	t.Helper()
 	dsn := os.Getenv("IAM_TEST_POSTGRES_DSN")
 	if dsn != "" {
 		resetDatabase(t, dsn)
@@ -33,6 +42,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 		AdminEmail:    adminEmail,
 		AdminPassword: adminPW,
 		DatabaseURL:   dsn,
+		Mailer:        mailer,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +60,7 @@ func resetDatabase(t *testing.T, dsn string) {
 	}
 	defer conn.Close(context.Background())
 	if _, err := conn.Exec(context.Background(), `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
-		iam_identities, iam_credentials, iam_subjects, iam_schema_migrations CASCADE`); err != nil {
+		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_schema_migrations CASCADE`); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -282,4 +292,92 @@ func TestLoadConfigFailsClosed(t *testing.T) {
 	if err != nil || len(cfg.SigningKey) < 32 || cfg.AdminEmail != devAdminEmail {
 		t.Fatalf("dev config = %+v, %v", cfg, err)
 	}
+}
+
+// mailbox captures the links the demo would email.
+type mailbox struct {
+	mu   sync.Mutex
+	mail []api.Mail
+}
+
+func (m *mailbox) send(_ context.Context, msg api.Mail) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mail = append(m.mail, msg)
+}
+
+func (m *mailbox) last(t *testing.T, kind, to string) string {
+	t.Helper()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := len(m.mail) - 1; i >= 0; i-- {
+		if m.mail[i].Kind == kind && m.mail[i].To == to {
+			return m.mail[i].Token
+		}
+	}
+	t.Fatalf("no %s mail to %s", kind, to)
+	return ""
+}
+
+func (m *mailbox) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.mail)
+}
+
+// TestPasswordResetFlow: an unknown account gets the same answer and no
+// mail; the admin resets their password, which signs them out everywhere.
+func TestPasswordResetFlow(t *testing.T) {
+	box := &mailbox{}
+	srv := newTestServerWith(t, box.send)
+	const newPW = "a new admin passphrase"
+
+	signedIn := newClient(t, srv)
+	signedIn.expect(200, "POST", "/api/session/login", login(adminEmail, adminPW), nil)
+
+	anon := newClient(t, srv)
+	var unknown, known map[string]string
+	anon.expect(202, "POST", "/api/password/forgot", map[string]string{"username": "nobody@example.com"}, &unknown)
+	if box.count() != 0 {
+		t.Fatal("mail sent for an unknown account")
+	}
+	anon.expect(202, "POST", "/api/password/forgot", map[string]string{"username": adminEmail}, &known)
+	if unknown["status"] != known["status"] {
+		t.Fatalf("responses differ: %v vs %v", unknown, known)
+	}
+	tok := box.last(t, "password_reset", adminEmail)
+
+	anon.expect(400, "POST", "/api/password/reset", map[string]string{"token": tok, "password": "short"}, nil)
+	anon.expect(204, "POST", "/api/password/reset", map[string]string{"token": tok, "password": newPW}, nil)
+	anon.expect(400, "POST", "/api/password/reset", map[string]string{"token": tok, "password": newPW}, nil)
+
+	signedIn.expect(401, "GET", "/api/me", nil, nil)
+	anon.expect(401, "POST", "/api/session/login", login(adminEmail, adminPW), nil)
+	anon.expect(200, "POST", "/api/session/login", login(adminEmail, newPW), nil)
+}
+
+// TestEmailVerificationFlow: a signed-in user verifies an address.
+func TestEmailVerificationFlow(t *testing.T) {
+	box := &mailbox{}
+	srv := newTestServerWith(t, box.send)
+
+	c := newClient(t, srv)
+	c.expect(401, "POST", "/api/email/verification", map[string]string{"email": "admin@example.org"}, nil)
+	var s sessionBody
+	c.expect(200, "POST", "/api/session/login", login(adminEmail, adminPW), &s)
+	c.csrf = s.CSRFToken
+	c.expect(400, "POST", "/api/email/verification", map[string]string{"email": "not an address"}, nil)
+	c.expect(202, "POST", "/api/email/verification", map[string]string{"email": "Admin@Example.org"}, nil)
+	tok := box.last(t, "email_verification", "admin@example.org")
+
+	anon := newClient(t, srv)
+	var got struct {
+		SubjectID string `json:"subject_id"`
+		Email     string `json:"email"`
+	}
+	anon.expect(200, "POST", "/api/email/verify", map[string]string{"token": tok}, &got)
+	if got.SubjectID != s.Subject.ID || got.Email != "admin@example.org" {
+		t.Fatalf("verified = %+v", got)
+	}
+	anon.expect(400, "POST", "/api/email/verify", map[string]string{"token": tok}, nil)
 }

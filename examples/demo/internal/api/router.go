@@ -39,6 +39,12 @@ func NewRouter(
 	mux.Handle("GET /api/session", authed(h.Session))
 	mux.HandleFunc("POST /api/session/logout", h.SessionLogout)
 
+	// Password reset and email verification (links are "mailed")
+	mux.HandleFunc("POST /api/password/forgot", h.ForgotPassword)
+	mux.HandleFunc("POST /api/password/reset", h.ResetPassword)
+	mux.Handle("POST /api/email/verification", authed(h.StartEmailVerification))
+	mux.HandleFunc("POST /api/email/verify", h.VerifyEmail)
+
 	// Account (either mode)
 	mux.Handle("GET /api/me", authed(h.Me))
 	mux.Handle("GET /api/sessions", authed(h.ListSessions))

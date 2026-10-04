@@ -91,3 +91,17 @@ type Registrar interface {
 	// roll back a sign-up that failed after Register succeeded.
 	Unregister(ctx context.Context, providerID string) error
 }
+
+// PasswordSetter is implemented by providers whose secret can be replaced,
+// such as username/password. It is used for password reset.
+type PasswordSetter interface {
+	AuthProvider
+
+	// CheckPassword validates a new password against the provider's policy
+	// without storing anything.
+	CheckPassword(password string) error
+
+	// SetPassword replaces the password of an existing login (providerID).
+	// It checks the policy first.
+	SetPassword(ctx context.Context, providerID, password string) error
+}

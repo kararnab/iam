@@ -21,12 +21,15 @@ import (
 //   - /api/session/...: an HttpOnly session cookie plus a CSRF token, for
 //     same-origin web apps.
 type Handlers struct {
-	IAM  iam.Service
-	Auth *httpauth.Middleware
+	IAM      iam.Service
+	Recovery iam.Recovery
+	Auth     *httpauth.Middleware
+	Mail     Mailer
 }
 
-func NewHandlers(svc iam.Service, auth *httpauth.Middleware) *Handlers {
-	return &Handlers{IAM: svc, Auth: auth}
+func NewHandlers(svc iam.Service, auth *httpauth.Middleware, mail Mailer) *Handlers {
+	rec, _ := svc.(iam.Recovery)
+	return &Handlers{IAM: svc, Recovery: rec, Auth: auth, Mail: mail}
 }
 
 // writeAuthError maps IAM errors to HTTP responses without revealing which

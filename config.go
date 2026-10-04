@@ -9,6 +9,7 @@ import (
 	"github.com/kararnab/iam/v2/audit"
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/metrics"
+	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/policy"
 	"github.com/kararnab/iam/v2/provider"
 	"github.com/kararnab/iam/v2/ratelimit"
@@ -65,6 +66,26 @@ type SignupConfig struct {
 
 	// InviteTTL is the default invite lifetime. Default 7 days, max 90 days.
 	InviteTTL time.Duration
+}
+
+// RecoveryConfig enables password reset and email verification (see
+// Recovery). Both are off until Tokens is set.
+type RecoveryConfig struct {
+	// Tokens stores reset and verification tokens. Required for Recovery.
+	Tokens onetime.Store
+
+	// PasswordProvider names the provider whose passwords are reset. It must
+	// implement provider.PasswordSetter. Default "password"; when no
+	// provider has that name, only email verification is available.
+	PasswordProvider string
+
+	// ResetTTL is the lifetime of a password-reset token. Default 1 hour,
+	// max 24 hours.
+	ResetTTL time.Duration
+
+	// VerificationTTL is the lifetime of an email-verification token.
+	// Default 48 hours, max 30 days.
+	VerificationTTL time.Duration
 }
 
 // RateLimitConfig throttles failed logins.
@@ -126,8 +147,11 @@ type Config struct {
 	// Signup controls SignUp and invites.
 	Signup SignupConfig
 
-	// RateLimit throttles failed logins.
+	// RateLimit throttles failed logins, and password-reset requests.
 	RateLimit RateLimitConfig
+
+	// Recovery enables password reset and email verification.
+	Recovery RecoveryConfig
 
 	// Audit receives security events. Default: audit.SlogLogger.
 	Audit audit.Logger
@@ -196,6 +220,10 @@ func (c *Config) validate() error {
 		return errors.New("iam: Signup.InviteTTL must be between 0 and 90 days")
 	}
 
+	if err := c.Recovery.validate(c.Providers); err != nil {
+		return err
+	}
+
 	if !c.RateLimit.Disabled && c.RateLimit.PerLogin == nil && c.RateLimit.PerIP == nil {
 		var err error
 		if c.RateLimit.PerLogin, err = ratelimit.NewMemory(ratelimit.Config{Threshold: 5}); err != nil {
@@ -220,6 +248,38 @@ func (c *Config) validate() error {
 	}
 	if c.Session.Now == nil {
 		c.Session.Now = c.Now
+	}
+	return nil
+}
+
+func (c *RecoveryConfig) validate(providers []provider.AuthProvider) error {
+	explicit := c.PasswordProvider != ""
+	if !explicit {
+		c.PasswordProvider = "password"
+	}
+	for _, p := range providers {
+		if p.Name() == c.PasswordProvider {
+			if _, ok := p.(provider.PasswordSetter); !ok {
+				return fmt.Errorf("iam: provider %q cannot set passwords (provider.PasswordSetter)", p.Name())
+			}
+			explicit = false
+		}
+	}
+	if explicit {
+		return fmt.Errorf("iam: Recovery.PasswordProvider %q is not configured", c.PasswordProvider)
+	}
+
+	if c.ResetTTL == 0 {
+		c.ResetTTL = time.Hour
+	}
+	if c.ResetTTL < 0 || c.ResetTTL > 24*time.Hour {
+		return errors.New("iam: Recovery.ResetTTL must be between 0 and 24 hours")
+	}
+	if c.VerificationTTL == 0 {
+		c.VerificationTTL = 48 * time.Hour
+	}
+	if c.VerificationTTL < 0 || c.VerificationTTL > 30*24*time.Hour {
+		return errors.New("iam: Recovery.VerificationTTL must be between 0 and 30 days")
 	}
 	return nil
 }

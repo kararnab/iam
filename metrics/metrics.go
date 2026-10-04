@@ -22,6 +22,12 @@ const (
 	Signup             Event = "signup"
 	SignupFailure      Event = "signup_failure"
 	RateLimited        Event = "rate_limited"
+
+	PasswordResetRequested   Event = "password_reset_requested"
+	PasswordReset            Event = "password_reset"
+	PasswordResetFailure     Event = "password_reset_failure"
+	EmailVerified            Event = "email_verified"
+	EmailVerificationFailure Event = "email_verification_failure"
 )
 
 // Events lists every Event, for backends that pre-register counters.
@@ -31,6 +37,8 @@ var Events = []Event{
 	TokenVerifySuccess, TokenVerifyFailure,
 	SessionRevoked, PolicyDenied,
 	Signup, SignupFailure, RateLimited,
+	PasswordResetRequested, PasswordReset, PasswordResetFailure,
+	EmailVerified, EmailVerificationFailure,
 }
 
 // Recorder counts events. Implementations must be safe for concurrent use

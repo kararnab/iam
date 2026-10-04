@@ -10,6 +10,7 @@ import (
 	"github.com/kararnab/iam/v2"
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/memstore"
+	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/password"
 	"github.com/kararnab/iam/v2/session"
 )
@@ -23,6 +24,7 @@ type stores struct {
 	}
 	sessions   session.Store
 	invites    invite.Store
+	tokens     onetime.Store
 	putSubject func(context.Context, iam.Subject) error
 }
 
@@ -33,6 +35,7 @@ func newStores(ctx context.Context, databaseURL string) (*stores, error) {
 			users:    users,
 			sessions: memstore.NewSessions(),
 			invites:  memstore.NewInvites(),
+			tokens:   memstore.NewTokens(),
 			putSubject: func(_ context.Context, s iam.Subject) error {
 				users.PutSubject(s)
 				return nil
@@ -53,6 +56,7 @@ func newStores(ctx context.Context, databaseURL string) (*stores, error) {
 		users:      users,
 		sessions:   pgstore.NewSessions(pool),
 		invites:    pgstore.NewInvites(pool),
+		tokens:     pgstore.NewTokens(pool),
 		putSubject: users.PutSubject,
 	}, nil
 }

@@ -52,7 +52,7 @@ httpauth.Middleware ── net/http adapter that depends ONLY on iam.Service
 
 ```
 github.com/kararnab/iam/v2         Service, Config, New, Subject, store contracts
-├── provider/                      AuthProvider, Identity, Registrar
+├── provider/                      AuthProvider, Identity, Registrar, PasswordSetter
 ├── password/                      argon2id/bcrypt Hasher, Policy, password Provider
 ├── session/                       Session, Store, Manager (rotation, reuse detection)
 ├── token/                         Issuer, Verifier, Claims
@@ -60,6 +60,7 @@ github.com/kararnab/iam/v2         Service, Config, New, Subject, store contract
 │   └── keys/                      Key, Provider, MemoryProvider
 ├── policy/                        Engine, RBAC, Func, AnyOf, AllOf, DenyAll
 ├── invite/                        Invite, Store, Policy
+├── onetime/                       password-reset and verification tokens
 ├── ratelimit/                     Limiter, LockoutHooks, Memory
 ├── audit/                         Logger, Event, SlogLogger, Multi
 ├── metrics/                       Recorder, Noop

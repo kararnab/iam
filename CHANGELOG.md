@@ -19,14 +19,27 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
   Each partial set has its own tracker table; mixing a partial set with
   `Migrate` on one database returns `pgstore.ErrMigrationSetConflict`
   ([#8](https://github.com/kararnab/iam/issues/8)).
+- **Password reset and email verification** ([#12](https://github.com/kararnab/iam/issues/12),
+  [docs](docs/recovery.md)): `iam.Recovery` (`StartPasswordReset`,
+  `CompletePasswordReset`, `StartEmailVerification`,
+  `CompleteEmailVerification`), implemented by the Service from `New` and
+  enabled by `Config.Recovery`. Reset requests reveal nothing about which
+  logins exist and are throttled; completing a reset revokes every session.
+  New package `onetime` (tokens and `Store`), `memstore.Tokens`,
+  `pgstore.Tokens`, `storetest.Tokens`, `provider.PasswordSetter`
+  (implemented by the password provider), and audit and metric events for
+  both flows. The demo app has both flows, with end-to-end tests.
 - `docs/stores.md`: using `pgstore` from a `database/sql` application (one
   pgx pool with `stdlib.OpenDBFromPool`, or a second small pool).
 
 ### Schema changes
 
-None. From this release on, every entry that changes the `pgstore` schema
-names the tables it touches, so applications that copy the SQL know when to
-act.
+From this release on, every entry that changes the `pgstore` schema names
+the tables it touches, so applications that copy the SQL know when to act.
+
+- `pgstore` migration 0002 adds **`iam_one_time_tokens`** (password-reset
+  and verification tokens). It is in `Migrations` and in
+  `SessionMigrations`; no existing table changes.
 
 ## [2.1.0] — 2026-10-03
 

@@ -53,7 +53,7 @@ together.
 
 Those are excellent tools; choose them when you need only their part, or
 when you want a separate identity server. `iam` doesn't do everything yet.
-If you need password reset, MFA or passkeys today, see the
+If you need MFA or passkeys today, see the
 [roadmap](#roadmap).
 
 ## Features
@@ -70,6 +70,8 @@ If you need password reset, MFA or passkeys today, see the
   "owners can edit").
 - ✉️ **Invite-only sign-up** with single-use, expiring invites, switchable to
   open or closed.
+- 🔐 **Password reset and email verification** with single-use, expiring
+  tokens, without revealing which accounts exist.
 - 🚦 **Login throttling** per account and per IP, on by default.
 - 🧾 **Audit events** (logins, reuse detection, lockouts, denials) through
   `log/slog`, and **Prometheus** metrics.
@@ -263,7 +265,8 @@ again revokes the whole session.
 - [API reference on pkg.go.dev](https://pkg.go.dev/github.com/kararnab/iam/v2)
 - Extension points, each an interface with a reference implementation:
   - [Identity providers](docs/providers.md): password, OIDC/Google, your own
-  - [Stores](docs/stores.md): users and identities, sessions, invites (memory, PostgreSQL, Redis, your own)
+  - [Stores](docs/stores.md): users and identities, sessions, invites, one-time tokens (memory, PostgreSQL, Redis, your own)
+  - [Password reset and email verification](docs/recovery.md)
   - [Policy](docs/policy.md): RBAC, composition, custom engines
   - [Audit](docs/audit.md): event types and sinks
   - [Metrics](docs/metrics.md): counters and Prometheus
@@ -282,7 +285,6 @@ its [README](examples/demo/README.md) and [OpenAPI spec](examples/demo/openapi.y
 Planned, roughly in this order. Upvotes and comments on issues help decide.
 
 - OIDC authorization-code flow helpers (redirect, PKCE, state)
-- Password reset and email verification, reusing the invite-token machinery
 - TOTP multi-factor authentication
 - WebAuthn and passkeys
 - Publishing JWKS for EdDSA access tokens
