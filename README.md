@@ -44,7 +44,7 @@ together.
 
 | | Login providers | Sessions | Access tokens | Authorization | Runs as |
 |---|:-:|:-:|:-:|:-:|---|
-| **iam** | password, Google, OIDC | ✅ cookie + bearer, rotation | ✅ JWT, PASETO | ✅ RBAC + your rules | a library |
+| **iam** | password, Google, OIDC | ✅ cookie + bearer, rotation | ✅ JWT (+ JWKS), PASETO | ✅ RBAC + your rules | a library |
 | golang-jwt/jwt | – | – | ✅ JWT | – | a library |
 | alexedwards/scs | – | ✅ cookie | – | – | a library |
 | markbates/goth | ✅ many OAuth | – | – | – | a library |
@@ -271,7 +271,7 @@ again revokes the whole session.
   - [Policy](docs/policy.md): RBAC, composition, custom engines
   - [Audit](docs/audit.md): event types and sinks
   - [Metrics](docs/metrics.md): counters and Prometheus
-  - [Access tokens](docs/tokens.md): JWT, PASETO, key rotation
+  - [Access tokens](docs/tokens.md): JWT, PASETO, key rotation, JWKS
 - [Architecture](docs/architecture.md) and the [security model](SECURITY.md)
 
 ## The demo app
@@ -287,7 +287,6 @@ Planned, roughly in this order. Upvotes and comments on issues help decide.
 
 - TOTP multi-factor authentication
 - WebAuthn and passkeys
-- Publishing JWKS for EdDSA access tokens
 
 `iam` will not become an OAuth 2.0 authorization server; see
 [SECURITY.md](SECURITY.md#what-the-library-deliberately-does-not-do).

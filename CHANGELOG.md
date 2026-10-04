@@ -37,6 +37,13 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
   return addresses. `Callback` returns the params for `Service.Login`,
   `SignUp` or `LinkIdentity`. The `oidc` module now requires
   `golang.org/x/oauth2` directly (it was already indirect).
+- **JWKS for EdDSA access tokens** ([#15](https://github.com/kararnab/iam/issues/15),
+  [docs](docs/tokens.md#publishing-keys-jwks)): `jwt.PublicJWKS` and
+  `jwt.JWKSHandler` publish the Ed25519 public keys of a `keys.Provider`
+  (never HS256 secrets); `jwt.NewRemoteKeys` is a verification-only provider
+  over a remote set, with background refresh and rate-limited fetches on
+  unknown key IDs. `keys.Finder` lets a provider look keys up itself;
+  `keys.Find` prefers it.
 - `docs/stores.md`: using `pgstore` from a `database/sql` application (one
   pgx pool with `stdlib.OpenDBFromPool`, or a second small pool).
 

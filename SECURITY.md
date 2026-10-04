@@ -83,8 +83,7 @@ Security fixes go into the latest v2 release.
 - **It sends no email.** Invite, password-reset and verification tokens are
   returned to your code to deliver.
 - **No automatic account linking** by email.
-- **No published JWKS** for asymmetric access tokens, and no DPoP or
-  sender-constrained tokens.
+- **No DPoP or sender-constrained tokens.**
 - **No distributed key management.** `keys.MemoryProvider` is
   single-process; back `keys.Provider` with your KMS or Vault.
 - **No storage of your user profile data** beyond subjects, roles and
