@@ -10,6 +10,24 @@ for the core module, and `oidc/v2.1.0`, `paseto/v2.1.0`, `pgstore/v2.1.0`,
 
 ## [Unreleased]
 
+### Added
+
+- `pgstore.SessionMigrations` and `pgstore.MigrateSessions`: only the session
+  and invite tables (`iam_sessions`, `iam_rotated_tokens`, `iam_invites`),
+  for applications that implement `iam.UserStore` over their own tables.
+  `pgstore.UserMigrations` and `pgstore.MigrateUsers` hold the user tables.
+  Each partial set has its own tracker table; mixing a partial set with
+  `Migrate` on one database returns `pgstore.ErrMigrationSetConflict`
+  ([#8](https://github.com/kararnab/iam/issues/8)).
+- `docs/stores.md`: using `pgstore` from a `database/sql` application (one
+  pgx pool with `stdlib.OpenDBFromPool`, or a second small pool).
+
+### Schema changes
+
+None. From this release on, every entry that changes the `pgstore` schema
+names the tables it touches, so applications that copy the SQL know when to
+act.
+
 ## [2.1.0] — 2026-10-03
 
 The sub-modules have no changes of their own; they are released together

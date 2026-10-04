@@ -39,6 +39,45 @@ cfg := iam.Config{
 - Run `(*pgstore.Sessions).PurgeExpired` periodically. Expired sessions are
   rejected anyway; this only reclaims space.
 
+### With your own user table
+
+If you implement `iam.UserStore` over your own tables, you need only the
+session and invite tables (`iam_sessions`, `iam_rotated_tokens`,
+`iam_invites`). Create just those:
+
+```go
+if err := pgstore.MigrateSessions(ctx, pool); err != nil { ... }
+```
+
+or copy the files in `pgstore.SessionMigrations`
+([`pgstore/migrations/sessions`](../pgstore/migrations/sessions)) into your
+own migration tool. `pgstore.UserMigrations` holds the user tables, and the
+two sets together create exactly what `Migrate` creates.
+
+- Each set has its own tracker (`iam_schema_migrations_sessions`,
+  `iam_schema_migrations_users`). Use either `Migrate`, or the partial sets;
+  mixing them returns `pgstore.ErrMigrationSetConflict`.
+- If you copy the SQL, pin the `pgstore` version and compare your copy with
+  the embedded files in a test (`fs.ReadFile(pgstore.SessionMigrations, ...)`).
+  Every schema change is a new numbered file in each set it touches, and the
+  [changelog](../CHANGELOG.md) names the tables it changes.
+
+### With `database/sql`
+
+The stores use pgx's native interface (`pgstore.DB`: a `*pgxpool.Pool` or a
+`*pgx.Conn`), not `database/sql`. If your application uses `database/sql`
+with the pgx driver, either:
+
+- **put both on one pool:** open a `*pgxpool.Pool` and derive your `*sql.DB`
+  from it with `stdlib.OpenDBFromPool(pool)` (`github.com/jackc/pgx/v5/stdlib`).
+  The stores and your code then share one set of connections; or
+- **open a second, small pool** for the stores (sessions and invites need
+  few connections; `MaxConns` of 2 to 5 is typical), and size both pools so
+  that together they stay under the server's `max_connections`.
+
+Both pools reach the same database, so your user table and the iam tables
+can live side by side. Transactions do not span the two pools.
+
 ## Redis (`github.com/kararnab/iam/redisstore/v2`)
 
 ```go
