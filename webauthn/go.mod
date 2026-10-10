@@ -2,7 +2,7 @@ module github.com/kararnab/iam/webauthn/v2
 
 go 1.26.0
 
-require github.com/kararnab/iam/v2 v2.2.0
+require github.com/kararnab/iam/v2 v2.3.0
 
 require (
 	github.com/fxamacker/cbor/v2 v2.9.4

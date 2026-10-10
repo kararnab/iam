@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/kararnab/iam/v2 v2.2.0
+	github.com/kararnab/iam/v2 v2.3.0
 )
 
 require (
