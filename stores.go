@@ -57,14 +57,33 @@ type IdentityStore interface {
 }
 
 // SignupGrant carries what a sign-up is entitled to, for example roles from
-// an invite. The application decides how to apply it.
+// an invite, plus the application's own profile fields. The application
+// decides how to apply it.
 type SignupGrant struct {
 	Roles    []string
 	InviteID string
+
+	// Profile is SignUpRequest.Profile, passed through untouched: fields
+	// from the sign-up form (display name, locale, ...) that the store can
+	// save in the same write that creates the subject. IAM never reads it.
+	Profile map[string]string
 }
 
 // UserStore is the combination IAM needs from the application.
 type UserStore interface {
 	SubjectLoader
 	IdentityStore
+}
+
+// SubjectDeleter is optionally implemented by a UserStore. When a sign-up
+// fails after CreateSubject succeeded (linking the identity or starting
+// the session failed), SignUp calls DeleteSubject so no subject is left
+// that nobody can sign in to. Without it such a subject remains, and the
+// store has to clean it up itself.
+//
+// DeleteSubject removes the subject and the identities linked to it.
+// Deleting a missing subject is not an error. A consumed invite is not
+// restored.
+type SubjectDeleter interface {
+	DeleteSubject(ctx context.Context, subjectID string) error
 }

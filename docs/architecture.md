@@ -112,7 +112,8 @@ immediately) → CSRF token check for unsafe methods → handler →
 `RequirePermission` → `Service.Authorize` → `policy.Engine`.
 
 **Bearer request.** `httpauth.Protect` → `Service.VerifyAccessToken`
-(stateless, or session-checked with `VerifySessionOnAccess`) → handler.
+(stateless, or session-checked with `VerifySessionOnAccess`; subject
+reloaded with `LoadSubjectOnAccess`) → handler.
 
 **Refresh.** `Service.Refresh` → `session.Manager.Refresh` (atomic rotation;
 a reused token revokes the session) → reload the subject → issue a new

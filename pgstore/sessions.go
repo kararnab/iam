@@ -13,7 +13,10 @@ import (
 // Sessions implements session.Store.
 type Sessions struct{ db DB }
 
-var _ session.Store = (*Sessions)(nil)
+var (
+	_ session.Store  = (*Sessions)(nil)
+	_ session.Purger = (*Sessions)(nil)
+)
 
 // NewSessions returns a session store.
 func NewSessions(db DB) *Sessions { return &Sessions{db: db} }
@@ -147,7 +150,8 @@ func (m *Sessions) DeleteBySubject(ctx context.Context, subjectID, exceptID stri
 	return int(tag.RowsAffected()), nil
 }
 
-// PurgeExpired deletes sessions past their absolute expiry. Run it
+// PurgeExpired implements session.Purger: it deletes sessions past their
+// absolute expiry (rotated hashes go with them, ON DELETE CASCADE). Run it
 // periodically (for example hourly); expired sessions are already rejected.
 func (m *Sessions) PurgeExpired(ctx context.Context, now time.Time) (int, error) {
 	tag, err := m.db.Exec(ctx, `DELETE FROM iam_sessions WHERE expires_at <= $1`, now)

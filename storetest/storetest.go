@@ -212,6 +212,55 @@ func Sessions(t *testing.T, newStore func(t *testing.T) session.Store) {
 	})
 }
 
+// PurgingSessionStore is what Purger needs.
+type PurgingSessionStore interface {
+	session.Store
+	session.Purger
+}
+
+// Purger runs the session.Purger conformance tests.
+func Purger(t *testing.T, newStore func(t *testing.T) PurgingSessionStore) {
+	t.Run("purge expired", func(t *testing.T) {
+		s := newStore(t)
+		expired, oldHash := newSession("alice", session.ModeBearer)
+		expired.ExpiresAt = base.Add(time.Hour)
+		live, liveHash := newSession("alice", session.ModeBearer)
+		live.ExpiresAt = base.Add(time.Hour + time.Second)
+		for _, sess := range []*session.Session{expired, live} {
+			if err := s.Create(ctx, sess); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, rotated := session.NewSecret()
+		if err := s.Rotate(ctx, expired.ID, oldHash, rotated, base); err != nil {
+			t.Fatal(err)
+		}
+
+		if n, err := s.PurgeExpired(ctx, base.Add(30*time.Minute)); err != nil || n != 0 {
+			t.Fatalf("purge before expiry = %d, %v", n, err)
+		}
+		// Expiry is inclusive: a session expiring exactly now is gone.
+		n, err := s.PurgeExpired(ctx, base.Add(time.Hour))
+		if err != nil || n != 1 {
+			t.Fatalf("PurgeExpired = %d, %v", n, err)
+		}
+		if _, err := s.Get(ctx, expired.ID); !errors.Is(err, session.ErrNotFound) {
+			t.Fatalf("expired session: %v", err)
+		}
+		for _, h := range [][]byte{oldHash, rotated} {
+			if _, _, err := s.GetByTokenHash(ctx, h); !errors.Is(err, session.ErrNotFound) {
+				t.Fatalf("hash of a purged session survived: %v", err)
+			}
+		}
+		if _, _, err := s.GetByTokenHash(ctx, liveHash); err != nil {
+			t.Fatalf("live session purged: %v", err)
+		}
+		if n, err := s.PurgeExpired(ctx, base.Add(time.Hour)); err != nil || n != 0 {
+			t.Fatalf("second purge = %d, %v", n, err)
+		}
+	})
+}
+
 // Invites runs the invite.Store conformance tests.
 func Invites(t *testing.T, newStore func(t *testing.T) invite.Store) {
 	newInvite := func(id string, expires time.Time) (*invite.Invite, []byte) {
@@ -621,7 +670,7 @@ type UserStore interface {
 // IAM requires. The zero value is the default suite.
 type UsersOptions struct {
 	// Roles are granted to the first subject the suite creates, and must be
-	// returned by LoadSubject in the same order. Default: editor, reader.
+	// returned by LoadSubject, in any order. Default: editor, reader.
 	// Set it for stores that allow one role per subject, or only known roles.
 	Roles []string
 
@@ -630,7 +679,17 @@ type UsersOptions struct {
 	DefaultRoles []string
 }
 
-// Users runs the iam.UserStore and password.CredentialStore conformance tests.
+// sameRoles compares role lists as multisets: order means nothing to
+// policy engines, and relational stores rarely keep insertion order.
+func sameRoles(got, want []string) bool {
+	got, want = slices.Clone(got), slices.Clone(want)
+	slices.Sort(got)
+	slices.Sort(want)
+	return slices.Equal(got, want)
+}
+
+// Users runs the iam.UserStore and password.CredentialStore conformance
+// tests. If the store implements iam.SubjectDeleter, that is tested too.
 func Users(t *testing.T, newStore func(t *testing.T) UserStore) {
 	UsersWith(t, newStore, UsersOptions{})
 }
@@ -657,7 +716,7 @@ func UsersWith(t *testing.T, newStore func(t *testing.T) UserStore, opts UsersOp
 		}
 
 		sub, err := s.LoadSubject(ctx, id)
-		if err != nil || sub.ID != id || !slices.Equal(sub.Roles, roles) || sub.Disabled {
+		if err != nil || sub.ID != id || !sameRoles(sub.Roles, roles) || sub.Disabled {
 			t.Fatalf("LoadSubject = %+v, %v", sub, err)
 		}
 		if _, err := s.LoadSubject(ctx, "missing"); !errors.Is(err, iam.ErrNotFound) {
@@ -693,6 +752,50 @@ func UsersWith(t *testing.T, newStore func(t *testing.T) UserStore, opts UsersOp
 		_ = s.UnlinkIdentity(ctx, id, "google", "g-1")
 		if _, err := s.ResolveIdentity(ctx, "google", "g-1"); !errors.Is(err, iam.ErrNotFound) {
 			t.Fatalf("after unlink: %v", err)
+		}
+	})
+
+	t.Run("delete subject", func(t *testing.T) {
+		s := newStore(t)
+		d, ok := s.(iam.SubjectDeleter)
+		if !ok {
+			t.Skip("store does not implement iam.SubjectDeleter")
+		}
+		g := provider.Identity{Provider: "google", ProviderID: "g-del", Email: "del@example.com"}
+		id, err := s.CreateSubject(ctx, g, iam.SignupGrant{Roles: slices.Clone(roles)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, err := s.CreateSubject(ctx, provider.Identity{Provider: "google", ProviderID: "g-keep", Email: "keep@example.com"},
+			iam.SignupGrant{Roles: slices.Clone(opts.DefaultRoles)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.LinkIdentity(ctx, id, g); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.DeleteSubject(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.LoadSubject(ctx, id); !errors.Is(err, iam.ErrNotFound) {
+			t.Fatalf("deleted subject: %v", err)
+		}
+		if _, err := s.ResolveIdentity(ctx, "google", "g-del"); !errors.Is(err, iam.ErrNotFound) {
+			t.Fatalf("identity of a deleted subject: %v", err)
+		}
+		if err := d.DeleteSubject(ctx, id); err != nil {
+			t.Fatalf("second delete: %v", err)
+		}
+		if _, err := s.LoadSubject(ctx, other); err != nil {
+			t.Fatalf("another subject was deleted: %v", err)
+		}
+		// The identity can be used again, as by a retried sign-up.
+		again, err := s.CreateSubject(ctx, g, iam.SignupGrant{Roles: slices.Clone(roles)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.LinkIdentity(ctx, again, g); err != nil {
+			t.Fatalf("relink after delete: %v", err)
 		}
 	})
 

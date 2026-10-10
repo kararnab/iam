@@ -109,6 +109,20 @@ type Store interface {
 	DeleteBySubject(ctx context.Context, subjectID, exceptID string) (int, error)
 }
 
+// Purger is implemented by stores that keep expired sessions until they
+// are removed (SQL databases). The manager already rejects expired
+// sessions; purging only bounds storage. Call it periodically, for example
+// hourly, from one or every instance (it is idempotent).
+//
+// Stores whose records expire on their own (Redis key TTLs, memstore,
+// which purges as it goes) need not implement it.
+type Purger interface {
+	// PurgeExpired deletes sessions whose absolute expiry is at or before
+	// now, with their rotated token hashes, and returns how many sessions
+	// it deleted.
+	PurgeExpired(ctx context.Context, now time.Time) (int, error)
+}
+
 // secretLen is the decoded length of a session secret.
 const secretLen = 32
 

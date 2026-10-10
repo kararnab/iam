@@ -277,8 +277,19 @@ func (s *service) VerifyAccessToken(ctx context.Context, accessToken string) (*S
 		*info = infoFor(sess)
 	}
 
+	subject := &Subject{ID: claims.SubjectID, Roles: claims.Roles, Attrs: claims.Attrs}
+	if s.cfg.LoadSubjectOnAccess {
+		subject, err = s.sessionSubject(ctx, &session.Session{ID: claims.SessionID, SubjectID: claims.SubjectID})
+		if err != nil {
+			if errors.Is(err, ErrInvalidSession) {
+				s.cfg.Metrics.Inc(metrics.TokenVerifyFailure)
+			}
+			return nil, nil, err
+		}
+	}
+
 	s.cfg.Metrics.Inc(metrics.TokenVerifySuccess)
-	return &Subject{ID: claims.SubjectID, Roles: claims.Roles, Attrs: claims.Attrs}, info, nil
+	return subject, info, nil
 }
 
 // ---------------------------------------------------------------------------
