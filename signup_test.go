@@ -13,6 +13,7 @@ import (
 	"github.com/kararnab/iam/v2/invite"
 	"github.com/kararnab/iam/v2/memstore"
 	"github.com/kararnab/iam/v2/password"
+	"github.com/kararnab/iam/v2/provider"
 	"github.com/kararnab/iam/v2/ratelimit"
 	"github.com/kararnab/iam/v2/session"
 )
@@ -298,5 +299,109 @@ func TestDefaultThrottling(t *testing.T) {
 				t.Fatalf("err = %v, want throttled=%v", err, tt.throttled)
 			}
 		})
+	}
+}
+
+// profileUsers records the grant CreateSubject receives, and can fail
+// LinkIdentity. It embeds *memstore.Users, so it is a SubjectDeleter.
+type profileUsers struct {
+	*memstore.Users
+	grant    iam.SignupGrant
+	created  string
+	linkFail bool
+}
+
+func (u *profileUsers) CreateSubject(ctx context.Context, id provider.Identity, g iam.SignupGrant) (string, error) {
+	u.grant = g
+	sid, err := u.Users.CreateSubject(ctx, id, g)
+	u.created = sid
+	return sid, err
+}
+
+func (u *profileUsers) LinkIdentity(ctx context.Context, sid string, id provider.Identity) error {
+	if u.linkFail {
+		return errStoreDown
+	}
+	return u.Users.LinkIdentity(ctx, sid, id)
+}
+
+// noDeleteUsers hides DeleteSubject: only the iam.UserStore methods are
+// promoted through the interface-typed field.
+type noDeleteUsers struct{ iam.UserStore }
+
+func openSignup(users iam.UserStore) func(*iam.Config) {
+	return func(c *iam.Config) {
+		c.Users = users
+		c.Signup = iam.SignupConfig{Policy: invite.Open, DefaultRoles: []string{"reader"}}
+	}
+}
+
+func TestSignupPassesProfile(t *testing.T) {
+	users := &profileUsers{}
+	f := newFixture(t, func(c *iam.Config) {
+		users.Users = c.Users.(*memstore.Users)
+		openSignup(users)(c)
+	})
+	req := pwSignup("", "ana@example.com", adminPW)
+	req.Profile = map[string]string{"name": "Ana"}
+	if _, err := f.svc.SignUp(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if users.grant.Profile["name"] != "Ana" || !slices.Equal(users.grant.Roles, []string{"reader"}) {
+		t.Fatalf("grant = %+v", users.grant)
+	}
+	req.Profile["name"] = "changed"
+	if users.grant.Profile["name"] != "Ana" {
+		t.Fatal("grant shares the caller's map")
+	}
+}
+
+// A sign-up that fails after CreateSubject removes the subject (and the
+// credential), so the same identity can sign up again (#25).
+func TestFailedSignupRemovesSubject(t *testing.T) {
+	users := &profileUsers{}
+	f := newFixture(t, func(c *iam.Config) {
+		users.Users = c.Users.(*memstore.Users)
+		openSignup(users)(c)
+	})
+	users.linkFail = true
+	if _, err := f.svc.SignUp(ctx, pwSignup("", "bo@example.com", adminPW)); !errors.Is(err, errStoreDown) {
+		t.Fatalf("sign-up with failing link: %v", err)
+	}
+	if users.created == "" {
+		t.Fatal("CreateSubject was not reached")
+	}
+	if _, err := users.LoadSubject(ctx, users.created); !errors.Is(err, iam.ErrNotFound) {
+		t.Fatalf("subject of a failed sign-up: %v", err)
+	}
+	users.linkFail = false
+	failed := users.created
+	res, err := f.svc.SignUp(ctx, pwSignup("", "bo@example.com", adminPW))
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if res.Subject.ID == failed {
+		t.Fatal("retry reused the removed subject")
+	}
+}
+
+// Without SubjectDeleter the subject stays (documented), but the
+// credential is still rolled back.
+func TestFailedSignupWithoutDeleterKeepsSubject(t *testing.T) {
+	inner := &profileUsers{}
+	f := newFixture(t, func(c *iam.Config) {
+		inner.Users = c.Users.(*memstore.Users)
+		openSignup(noDeleteUsers{UserStore: inner})(c)
+	})
+	inner.linkFail = true
+	if _, err := f.svc.SignUp(ctx, pwSignup("", "cy@example.com", adminPW)); err == nil {
+		t.Fatal("sign-up succeeded")
+	}
+	if _, err := inner.LoadSubject(ctx, inner.created); err != nil {
+		t.Fatalf("subject should remain without a SubjectDeleter: %v", err)
+	}
+	inner.linkFail = false
+	if _, err := f.svc.SignUp(ctx, pwSignup("", "cy@example.com", adminPW)); err != nil {
+		t.Fatalf("credential not rolled back: %v", err)
 	}
 }

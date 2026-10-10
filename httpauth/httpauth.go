@@ -53,9 +53,15 @@ type CookieConfig struct {
 }
 
 // CSRFConfig configures cross-site request forgery protection.
+//
+// It only applies when cookie mode is accepted. A bearer-only middleware
+// has no ambient credential for a cross-site request to ride on, so it
+// makes neither check, and cross-origin browser clients (single-page apps,
+// Wasm) work without Disabled or TrustedOrigins; browser access to a
+// bearer API is governed by its CORS policy instead.
 type CSRFConfig struct {
 	// Disabled turns off both checks. Only do this if another layer
-	// provides CSRF protection.
+	// provides CSRF protection. Bearer-only middlewares don't need it.
 	Disabled bool
 
 	// Key derives per-session CSRF tokens (HMAC-SHA256). At least 32
@@ -258,9 +264,9 @@ func isSafeMethod(method string) bool {
 
 // Protect wraps the whole handler tree. It:
 //
-//  1. rejects cross-origin unsafe requests (http.CrossOriginProtection,
-//     based on Sec-Fetch-Site / Origin), including unauthenticated ones such
-//     as login forms;
+//  1. when cookie mode is accepted, rejects cross-origin unsafe requests
+//     (http.CrossOriginProtection, based on Sec-Fetch-Site / Origin),
+//     including unauthenticated ones such as login forms;
 //  2. identifies the caller from the session cookie or the Authorization
 //     header; invalid credentials make the request anonymous, while a store
 //     failure while checking them answers 503 with ErrUnavailable;
@@ -270,8 +276,12 @@ func isSafeMethod(method string) bool {
 // Bearer-authenticated requests are not subject to CSRF checks: browsers do
 // not attach Authorization headers automatically.
 func (m *Middleware) Protect(next http.Handler) http.Handler {
+	// Without cookie mode there is no ambient credential, so cross-origin
+	// requests can't act as anyone and are left to the application's CORS
+	// policy.
+	checkOrigin := m.acceptCookie && !m.csrf.Disabled
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !m.csrf.Disabled && !isSafeMethod(r.Method) {
+		if checkOrigin && !isSafeMethod(r.Method) {
 			if err := m.cop.Check(r); err != nil {
 				m.onError(w, r, http.StatusForbidden, err)
 				return

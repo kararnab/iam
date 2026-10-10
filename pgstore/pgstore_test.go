@@ -74,6 +74,9 @@ func TestConformance(t *testing.T) {
 	t.Run("sessions", func(t *testing.T) {
 		storetest.Sessions(t, func(t *testing.T) session.Store { return NewSessions(newPool(t)) })
 	})
+	t.Run("purger", func(t *testing.T) {
+		storetest.Purger(t, func(t *testing.T) storetest.PurgingSessionStore { return NewSessions(newPool(t)) })
+	})
 	t.Run("invites", func(t *testing.T) {
 		storetest.Invites(t, func(t *testing.T) invite.Store { return NewInvites(newPool(t)) })
 	})

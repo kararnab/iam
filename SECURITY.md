@@ -28,9 +28,10 @@ Security fixes go into the latest v2 release.
 | **Stolen database or backup** | Only SHA-256 hashes of session secrets, refresh tokens and invite tokens are stored, so a dump contains no usable credentials. Passwords are argon2id (bcrypt hashes are upgraded on login). |
 | **Stolen refresh token** | Refresh tokens rotate on every use. Replaying a rotated token revokes the whole session (`refresh_reuse_detected`, logged at WARN), which locks out both the attacker and the victim until they log in again. |
 | **Stolen access token** | Short lifetime (10 minutes by default); optional per-request session check (`VerifySessionOnAccess`) for immediate revocation. |
+| **Stale privileges in bearer mode** | Access tokens carry the roles they were issued with, so by default a revoked role or a disabled subject keeps working until the token expires (≤ its TTL). `LoadSubjectOnAccess` reloads the subject on every bearer request, as cookie mode always does. |
 | **Token forgery and algorithm confusion** | Each key is pinned to one algorithm; the key is chosen by `kid`; `none`, RSA and ECDSA are rejected; HS256 keys must be ≥ 32 bytes; `iss`, `aud`, `exp`, `nbf`, `iat` are checked with bounded leeway; `typ: at+jwt` stops ID tokens being used as access tokens; strict canonical decoding (fuzzed). |
 | **Forged or misdirected ID tokens (OIDC)** | Issuer checked against an explicit list, audience must be your client ID, signature from the issuer's published keys, optional nonce. |
-| **Cross-site request forgery** | `SameSite=Lax` cookies; `http.CrossOriginProtection` (Fetch Metadata and `Origin`) on every unsafe request, including login; a per-session HMAC CSRF token for cookie-authenticated unsafe requests; constant-time comparison. |
+| **Cross-site request forgery** | `SameSite=Lax` cookies; when cookie mode is accepted, `http.CrossOriginProtection` (Fetch Metadata and `Origin`) on every unsafe request, including login; a per-session HMAC CSRF token for cookie-authenticated unsafe requests; constant-time comparison. A bearer-only middleware makes neither check: browsers attach no credential on their own, and cross-origin access to the API is the application's CORS policy. |
 | **Session fixation and cookie tossing** | A fresh session ID at every login; `RotateSession` for privilege changes; `__Host-` cookie prefix (Secure, Path=/, no Domain); duplicate session cookies make a request anonymous. |
 | **Session hijacking via script** | `HttpOnly` cookies keep the secret out of reach of JavaScript. (XSS can still act as the user while the page is open; see below.) |
 | **Privilege escalation through policy gaps** | Deny by default; `iam.New` refuses to start without a policy engine; engine errors deny; every denial is audited. |
@@ -73,7 +74,8 @@ Security fixes go into the latest v2 release.
 | Login throttling | on: in-memory, 5 failures per login and 100 per IP within 15 minutes, then back-off from 1s doubling to 15 minutes (`RateLimit.Disabled` turns it off) |
 | Sign-up | closed; invite-only once an invite store is set; invites expire after 7 days |
 | Authorization | none until you configure an engine; nothing allowed implicitly |
-| CSRF | on: cross-origin protection plus a token for cookie sessions |
+| CSRF | on when cookie mode is accepted: cross-origin protection plus a token for cookie sessions; off for bearer-only middlewares |
+| Subject reload on bearer requests | off (`LoadSubjectOnAccess`): roles come from the token |
 | `X-Forwarded-For` | ignored unless `TrustedProxies` is set |
 | OIDC code flow | PKCE S256, state and nonce always; flow cookie AES-GCM, `__Host-`, `HttpOnly`, `SameSite=Lax`, 10 minutes; `returnTo` local paths only |
 

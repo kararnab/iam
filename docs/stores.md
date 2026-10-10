@@ -39,8 +39,8 @@ cfg := iam.Config{
   are safe. You can also copy the SQL into your own migration tool.
 - Tables are prefixed `iam_`. `iam_sessions.subject_id` deliberately has no
   foreign key, so sessions also work with your own users table.
-- Run `(*pgstore.Sessions).PurgeExpired` and `(*pgstore.Tokens).PurgeExpired`
-  periodically. Expired sessions and tokens are rejected anyway; this only
+- Run `(*pgstore.Sessions).PurgeExpired` (a `session.Purger`) and
+  `(*pgstore.Tokens).PurgeExpired` periodically. Expired sessions and tokens are rejected anyway; this only
   reclaims space.
 
 ### With your own user table
@@ -112,6 +112,17 @@ Read the interface documentation. The contracts that matter most:
   `invite.ErrInvalid`, ...), because callers branch on them.
 - Never store secrets. You only ever receive SHA-256 hashes, and should keep
   it that way.
+- `CreateSubject` receives the sign-up form's application fields in
+  `SignupGrant.Profile` (from `SignUpRequest.Profile`), so it can save them
+  in the same write that creates the subject. IAM never reads them.
+- Optionally implement **`iam.SubjectDeleter`**: when a sign-up fails after
+  `CreateSubject` (linking the identity or starting the session failed),
+  `SignUp` calls `DeleteSubject`, so no subject is left that nobody can sign
+  in to. Without it, such subjects remain and are yours to clean up.
+- If your session store keeps expired rows (SQL), implement
+  **`session.Purger`** and call it periodically. Stores whose records expire
+  on their own (Redis TTLs) don't need it.
+- `LoadSubject` may return roles in any order.
 
 Then run the conformance suite, which every built-in store passes:
 
@@ -123,5 +134,10 @@ func TestMyStores(t *testing.T) {
     storetest.MFA(t, func(t *testing.T) mfa.Store { return newMyMFA(t) })
     storetest.Passkeys(t, func(t *testing.T) passkey.Store { return newMyPasskeys(t) })
     storetest.Users(t, func(t *testing.T) storetest.UserStore { return newMyUsers(t) })
+    // If your session store implements session.Purger:
+    storetest.Purger(t, func(t *testing.T) storetest.PurgingSessionStore { return newMySessions(t) })
 }
 ```
+
+`storetest.Users` also checks `iam.SubjectDeleter` when the store
+implements it.

@@ -3,6 +3,7 @@ package iam_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -166,5 +167,57 @@ func TestRefreshStoreFailureKeepsRefreshToken(t *testing.T) {
 	}
 	if _, err := f.svc.Refresh(ctx, pair.RefreshToken, iam.ClientInfo{}); !errors.Is(err, iam.ErrInvalidSession) {
 		t.Fatalf("session after reuse: %v", err)
+	}
+}
+
+// With LoadSubjectOnAccess, bearer requests see the subject's current roles
+// and Disabled flag instead of the ones in the token (#26).
+func TestLoadSubjectOnAccess(t *testing.T) {
+	for _, load := range []bool{false, true} {
+		t.Run(map[bool]string{false: "token roles (default)", true: "loaded roles"}[load], func(t *testing.T) {
+			var users *flakyUsers
+			f := newFixture(t, func(c *iam.Config) {
+				users = &flakyUsers{UserStore: c.Users}
+				c.Users = users
+				c.LoadSubjectOnAccess = load
+			})
+			res, err := f.svc.Login(ctx, pwLogin("admin@example.com", adminPW, session.ModeBearer))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Demote: the token still says "admin".
+			f.users.PutSubject(iam.Subject{ID: "s-admin", Roles: []string{"reader"}})
+			sub, _, err := f.svc.VerifyAccessToken(ctx, res.AccessToken)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantRoles := []string{"admin"}
+			if load {
+				wantRoles = []string{"reader"}
+			}
+			if !slices.Equal(sub.Roles, wantRoles) {
+				t.Fatalf("roles = %v, want %v", sub.Roles, wantRoles)
+			}
+			if !load {
+				return
+			}
+
+			// A store outage is "try again", not "signed out".
+			users.down.Store(true)
+			_, _, err = f.svc.VerifyAccessToken(ctx, res.AccessToken)
+			isUnavailable(t, "verify", err)
+			users.down.Store(false)
+
+			// Disabled: the token stops working and the session is revoked.
+			f.users.PutSubject(iam.Subject{ID: "s-admin", Roles: []string{"reader"}, Disabled: true})
+			if _, _, err := f.svc.VerifyAccessToken(ctx, res.AccessToken); !errors.Is(err, iam.ErrInvalidSession) {
+				t.Fatalf("disabled subject: %v", err)
+			}
+			f.users.PutSubject(iam.Subject{ID: "s-admin", Roles: []string{"reader"}})
+			if _, err := f.svc.Refresh(ctx, res.RefreshToken, iam.ClientInfo{}); !errors.Is(err, iam.ErrInvalidSession) {
+				t.Fatalf("session of a disabled subject should be revoked: %v", err)
+			}
+		})
 	}
 }

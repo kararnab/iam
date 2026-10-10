@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +27,11 @@ type SignUpRequest struct {
 	Params      map[string]string
 	Mode        session.Mode
 	Client      ClientInfo
+
+	// Profile holds application fields for the new subject (display name,
+	// locale, ...). IAM passes it to IdentityStore.CreateSubject as
+	// SignupGrant.Profile without reading it.
+	Profile map[string]string
 }
 
 // InviteRequest describes an invite to create.
@@ -120,7 +126,7 @@ func (s *service) SignUp(ctx context.Context, req SignUpRequest) (res *LoginResu
 		return fail("store_error", rerr)
 	}
 
-	grant := SignupGrant{Roles: slices.Clone(s.cfg.Signup.DefaultRoles)}
+	grant := SignupGrant{Roles: slices.Clone(s.cfg.Signup.DefaultRoles), Profile: maps.Clone(req.Profile)}
 	if inv != nil {
 		if inv.Email != "" && !strings.EqualFold(inv.Email, identity.Email) {
 			return fail("invite_email_mismatch", ErrInvalidInvite)
@@ -131,7 +137,7 @@ func (s *service) SignUp(ctx context.Context, req SignUpRequest) (res *LoginResu
 		if cerr != nil {
 			return fail("invalid_invite", ErrInvalidInvite)
 		}
-		grant = SignupGrant{Roles: slices.Clone(used.Roles), InviteID: used.ID}
+		grant.Roles, grant.InviteID = slices.Clone(used.Roles), used.ID
 		s.audit(ctx, audit.Event{
 			Type:     audit.EventInviteConsumed,
 			Provider: identity.Provider,
@@ -145,6 +151,25 @@ func (s *service) SignUp(ctx context.Context, req SignUpRequest) (res *LoginResu
 	if err != nil {
 		return fail("store_error", err)
 	}
+	// From here on, also remove the subject if sign-up does not complete,
+	// so no subject is left that nobody can sign in to.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if d, ok := s.cfg.Users.(SubjectDeleter); ok {
+			if derr := d.DeleteSubject(ctx, subjectID); derr != nil {
+				s.audit(ctx, audit.Event{
+					Type:      audit.EventSignup,
+					SubjectID: subjectID,
+					Provider:  identity.Provider,
+					ClientIP:  req.Client.IP,
+					Message:   "could not remove the subject of a failed sign-up",
+					Attrs:     map[string]string{"reason": "cleanup_failed"},
+				})
+			}
+		}
+	}()
 	if err = s.cfg.Users.LinkIdentity(ctx, subjectID, *identity); err != nil {
 		return fail("store_error", err)
 	}

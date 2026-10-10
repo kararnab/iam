@@ -303,6 +303,51 @@ func TestCrossOriginLoginBlocked(t *testing.T) {
 	}
 }
 
+// A bearer-only middleware has no cookie for a cross-site request to ride
+// on, so cross-origin clients (SPA, Wasm) are not rejected (#23).
+func TestBearerOnlySkipsCrossOriginProtection(t *testing.T) {
+	e := newEnv(t, httpauth.Config{Modes: []session.Mode{session.ModeBearer}})
+	tok := e.bearer(t, "editor@example.com")
+	for _, tt := range []struct {
+		name string
+		auth string
+		want int
+	}{
+		{"authenticated cross-site write", "Bearer " + tok, 200},
+		{"anonymous cross-site write", "", 401},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/books", nil)
+			r.Header.Set("Sec-Fetch-Site", "cross-site")
+			r.Header.Set("Origin", "https://spa.example")
+			if tt.auth != "" {
+				r.Header.Set("Authorization", tt.auth)
+			}
+			if w := e.do(r); w.Code != tt.want {
+				t.Fatalf("status = %d, want %d", w.Code, tt.want)
+			}
+		})
+	}
+	// A cross-site login (anonymous, unsafe) reaches the handler too.
+	r := httptest.NewRequest("POST", "/login", strings.NewReader("username=editor@example.com"))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	if w := e.do(r); w.Code != 200 {
+		t.Fatalf("cross-site login: status = %d", w.Code)
+	}
+}
+
+// With cookie mode also accepted, the check stays on for every request.
+func TestMixedModesKeepCrossOriginProtection(t *testing.T) {
+	e := newEnv(t, httpauth.Config{Modes: []session.Mode{session.ModeCookie, session.ModeBearer}})
+	r := httptest.NewRequest("POST", "/books", nil)
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r.Header.Set("Authorization", "Bearer "+e.bearer(t, "editor@example.com"))
+	if w := e.do(r); w.Code != 403 {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+}
+
 func TestEndSession(t *testing.T) {
 	e := newEnv(t, httpauth.Config{})
 	c, csrf := e.login(t, "editor@example.com")

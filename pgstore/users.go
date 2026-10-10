@@ -17,6 +17,7 @@ type Users struct{ db DB }
 
 var (
 	_ iam.UserStore            = (*Users)(nil)
+	_ iam.SubjectDeleter       = (*Users)(nil)
 	_ password.CredentialStore = (*Users)(nil)
 )
 
@@ -96,6 +97,13 @@ func (u *Users) CreateSubject(ctx context.Context, _ provider.Identity, grant ia
 		return "", err
 	}
 	return id, nil
+}
+
+// DeleteSubject implements iam.SubjectDeleter. Linked identities go with
+// it (ON DELETE CASCADE).
+func (u *Users) DeleteSubject(ctx context.Context, subjectID string) error {
+	_, err := u.db.Exec(ctx, `DELETE FROM iam_subjects WHERE id = $1`, subjectID)
+	return err
 }
 
 // GetCredential implements password.CredentialStore.

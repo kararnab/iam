@@ -94,6 +94,14 @@ stays valid until it expires. Set `iam.Config.VerifySessionOnAccess` to
 check the session on every request (one store lookup) when revocation must
 be immediate.
 
+Roles, attributes and the disabled flag are likewise the ones in the token:
+a revoked role or a disabled subject still passes `RequireRole` /
+`RequirePermission` until the token expires. Set
+`iam.Config.LoadSubjectOnAccess` to load the subject from your `UserStore`
+on every bearer request (one `LoadSubject` call), as cookie mode always
+does; a subject that is gone or disabled then makes the token invalid and
+revokes its session. The two options are independent and can be combined.
+
 ## Custom formats
 
 Implement `token.Issuer` and `token.Verifier`, for example opaque tokens

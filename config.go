@@ -170,6 +170,15 @@ type Config struct {
 	// valid until they expire.
 	VerifySessionOnAccess bool
 
+	// LoadSubjectOnAccess makes VerifyAccessToken also load the subject
+	// from Users, so roles, attributes and Disabled are current on every
+	// bearer request (as they are in cookie mode) instead of being the ones
+	// in the token. A revoked role or a disabled subject then takes effect
+	// immediately rather than when the access token expires, at the cost of
+	// a LoadSubject call per request. A subject that is gone or disabled
+	// makes the token invalid and revokes its session. Default false.
+	LoadSubjectOnAccess bool
+
 	// Policy decides authorization. Required: there is no allow-all default.
 	Policy policy.Engine
 

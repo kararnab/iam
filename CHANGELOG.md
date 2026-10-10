@@ -11,6 +11,48 @@ sub-modules.
 
 ## [Unreleased]
 
+Fixes for gaps found while integrating iam into an application
+([kararnab/LibraryZ#22](https://github.com/kararnab/LibraryZ/pull/22)). Everything is additive or
+opt-in, except that bearer-only `httpauth` middlewares no longer reject
+cross-origin requests (see Changed).
+
+### Added
+
+- `iam.Config.LoadSubjectOnAccess`: `VerifyAccessToken` loads the subject
+  from the `UserStore`, so roles, attributes and `Disabled` are current on
+  every bearer request instead of being the ones in the token. A subject
+  that is gone or disabled makes the token invalid and revokes its session;
+  a store failure is `ErrUnavailable`
+  ([#26](https://github.com/kararnab/iam/issues/26)).
+- `iam.SignUpRequest.Profile`, passed untouched to `CreateSubject` as
+  `iam.SignupGrant.Profile`, so stores can save the sign-up form's own
+  fields (display name, ...) in the write that creates the subject
+  ([#24](https://github.com/kararnab/iam/issues/24)).
+- `iam.SubjectDeleter` (optional, implemented by `memstore.Users` and
+  `pgstore.Users`): `SignUp` deletes the subject it created when a later
+  step fails ([#25](https://github.com/kararnab/iam/issues/25)).
+- `session.Purger` (implemented by `pgstore.Sessions`) and
+  `storetest.Purger`, a contract and conformance test for purging expired
+  sessions ([#27](https://github.com/kararnab/iam/issues/27)).
+  `storetest.Users` also checks `iam.SubjectDeleter` when implemented.
+
+### Changed
+
+- `httpauth`: a middleware that doesn't accept cookie mode no longer applies
+  `http.CrossOriginProtection`. With no ambient credential the check
+  protected nothing, and it rejected legitimate cross-origin single-page
+  and Wasm clients unless CSRF protection was disabled outright
+  ([#23](https://github.com/kararnab/iam/issues/23)). Cookie and mixed-mode
+  middlewares are unchanged.
+- `storetest.Users` compares roles regardless of order
+  ([#28](https://github.com/kararnab/iam/issues/28)).
+
+### Fixed
+
+- `SignUp` no longer leaves an orphaned subject behind when linking the
+  identity or starting the session fails, for stores that implement
+  `iam.SubjectDeleter` ([#25](https://github.com/kararnab/iam/issues/25)).
+
 ## [2.2.0] — 2026-10-04
 
 Every item of the v2.1 roadmap. Nothing is removed or changed

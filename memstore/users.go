@@ -29,6 +29,7 @@ type Users struct {
 
 var (
 	_ iam.UserStore            = (*Users)(nil)
+	_ iam.SubjectDeleter       = (*Users)(nil)
 	_ password.CredentialStore = (*Users)(nil)
 )
 
@@ -112,6 +113,19 @@ func (u *Users) CreateSubject(_ context.Context, _ provider.Identity, grant iam.
 	id := rand.Text()
 	u.subjects[id] = iam.Subject{ID: id, Roles: slices.Clone(grant.Roles)}
 	return id, nil
+}
+
+// DeleteSubject implements iam.SubjectDeleter.
+func (u *Users) DeleteSubject(_ context.Context, subjectID string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	delete(u.subjects, subjectID)
+	for k, id := range u.identities {
+		if id == subjectID {
+			delete(u.identities, k)
+		}
+	}
+	return nil
 }
 
 // Identities returns the identities linked to a subject, for display.
