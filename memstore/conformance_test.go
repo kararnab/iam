@@ -19,6 +19,9 @@ func TestConformance(t *testing.T) {
 	t.Run("invites", func(t *testing.T) {
 		storetest.Invites(t, func(*testing.T) invite.Store { return memstore.NewInvites() })
 	})
+	t.Run("invite manager", func(t *testing.T) {
+		storetest.InviteManager(t, func(*testing.T) storetest.ManagedInviteStore { return memstore.NewInvites() })
+	})
 	t.Run("tokens", func(t *testing.T) {
 		storetest.Tokens(t, func(*testing.T) onetime.Store { return memstore.NewTokens() })
 	})

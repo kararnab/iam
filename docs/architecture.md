@@ -48,6 +48,13 @@ iam.Service ──────────────── implemented by iam.
 httpauth.Middleware ── net/http adapter that depends ONLY on iam.Service
 ```
 
+The default implementation also provides optional interfaces, kept out of
+`iam.Service` so that adding them broke no implementation of it:
+`iam.Recovery` (password reset, email verification), `iam.MFA`,
+`iam.Passwords` (change a signed-in subject's password) and
+`iam.InviteAdmin` (list, revoke and replace pending invites).
+`iam.NewServices` returns all of them typed, with no type assertion.
+
 ## Package layout
 
 ```
@@ -59,7 +66,7 @@ github.com/kararnab/iam/v2         Service, Config, New, Subject, store contract
 │   ├── jwt/                       stdlib JWS: HS256, EdDSA
 │   └── keys/                      Key, Provider, MemoryProvider
 ├── policy/                        Engine, RBAC, Func, AnyOf, AllOf, DenyAll
-├── invite/                        Invite, Store, Policy
+├── invite/                        Invite, Store, Manager, Policy
 ├── onetime/                       password-reset and verification tokens
 ├── mfa/                           TOTP (RFC 6238), recovery codes, Store
 ├── passkey/                       WebAuthn Credential, Store
@@ -133,3 +140,8 @@ ID token and the cookie's nonce.
 the identity → consume the invite atomically → `CreateSubject` +
 `LinkIdentity` → start a session. Any failure after registration rolls the
 registration back.
+
+**Invite management.** `InviteAdmin.ListPendingInvites`,
+`RevokePendingInvite` and `ReplaceInvite` ("send again": the old link stops
+working and a new one is issued in one step) → `invite.Manager`, which the
+invite store implements (memstore and pgstore do).

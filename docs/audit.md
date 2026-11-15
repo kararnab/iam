@@ -38,11 +38,12 @@ never contain passwords, tokens or session secrets.
 | `policy_denied` | authorization denied | `action`, `resource_type`, `resource_id`, `reason` |
 | `identity_linked` | identity linked to a subject | |
 | `signup` | sign-up succeeded or failed | `invite_id` or `reason` |
-| `invite_created` / `invite_consumed` | invite lifecycle | `invite_id`, `roles`, `invited_by` |
+| `invite_created` / `invite_consumed` / `invite_revoked` | invite lifecycle | `invite_id`, `roles`, `invited_by`, `replaced_by` |
 | `rate_limited` | attempt refused while throttled | `scope`: `login`, `ip`, `reset_login`, `reset_ip` or `mfa` |
 | `lockout` | a key just became throttled (logged at WARN) | `scope`, `failures`, `retry_after` |
-| `password_reset_requested` | a reset was requested (issued or not) | `reason` when not issued: `unknown_login`, `subject_disabled`, `rate_limited`, ... |
+| `password_reset_requested` | a reset was requested (issued or not) | `reason` when not issued: `unknown_login`, `subject_disabled`, `rate_limited`, `declined`, ... |
 | `password_reset` | a reset completed or failed | `token_id`, `sessions_revoked`, or `reason` |
+| `password_changed` | a signed-in password change succeeded or failed | `sessions_revoked`, or `reason` |
 | `email_verification_requested` / `email_verified` | verification lifecycle | `token_id`, or `reason` on failure |
 | `mfa_challenge` | password accepted, second factor required | `mode` |
 | `mfa_success` / `mfa_failure` | a TOTP or recovery code was checked | `method`, or `reason` |

@@ -26,6 +26,8 @@ const (
 	PasswordResetRequested   Event = "password_reset_requested"
 	PasswordReset            Event = "password_reset"
 	PasswordResetFailure     Event = "password_reset_failure"
+	PasswordChanged          Event = "password_changed"
+	PasswordChangeFailure    Event = "password_change_failure"
 	EmailVerified            Event = "email_verified"
 	EmailVerificationFailure Event = "email_verification_failure"
 
@@ -42,6 +44,7 @@ var Events = []Event{
 	SessionRevoked, PolicyDenied,
 	Signup, SignupFailure, RateLimited,
 	PasswordResetRequested, PasswordReset, PasswordResetFailure,
+	PasswordChanged, PasswordChangeFailure,
 	EmailVerified, EmailVerificationFailure,
 	MFAChallenge, MFASuccess, MFAFailure,
 }

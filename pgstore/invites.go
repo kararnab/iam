@@ -71,3 +71,62 @@ func (s *Invites) Delete(ctx context.Context, id string) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM iam_invites WHERE id = $1`, id)
 	return err
 }
+
+var _ invite.Manager = (*Invites)(nil)
+
+// ListUsable implements invite.Manager.
+func (s *Invites) ListUsable(ctx context.Context, now time.Time) ([]*invite.Invite, error) {
+	rows, err := s.db.Query(ctx, `SELECT `+inviteCols+` FROM iam_invites
+		 WHERE used_at IS NULL AND expires_at > $1
+		 ORDER BY created_at DESC, id`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*invite.Invite
+	for rows.Next() {
+		inv, err := scanInvite(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+// DeleteUsable implements invite.Manager with a conditional DELETE.
+func (s *Invites) DeleteUsable(ctx context.Context, id string, now time.Time) error {
+	tag, err := s.db.Exec(ctx, `DELETE FROM iam_invites WHERE id = $1 AND used_at IS NULL AND expires_at > $2`, id, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	var exists bool
+	if err := s.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM iam_invites WHERE id = $1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return invite.ErrInvalid
+	}
+	return invite.ErrNotFound
+}
+
+// Replace implements invite.Manager in one transaction.
+func (s *Invites) Replace(ctx context.Context, oldID string, now time.Time, inv *invite.Invite) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	// Rollback after Commit is a no-op that returns pgx.ErrTxClosed.
+	defer func() { _ = tx.Rollback(ctx) }()
+	in := &Invites{db: tx}
+	if err := in.DeleteUsable(ctx, oldID, now); err != nil {
+		return err
+	}
+	if err := in.Create(ctx, inv); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

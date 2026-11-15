@@ -111,7 +111,7 @@ Add only the integrations you use:
 | `github.com/kararnab/iam/v2` | service, sessions, JWT, passwords, policy, invites, rate limiting, `httpauth`, in-memory stores | stdlib, `golang.org/x/crypto` |
 | `github.com/kararnab/iam/oidc/v2` | Google and OpenID Connect sign-in | `coreos/go-oidc` |
 | `github.com/kararnab/iam/paseto/v2` | PASETO v4 access tokens | `aidanwoods.dev/go-paseto` |
-| `github.com/kararnab/iam/pgstore/v2` | PostgreSQL stores and migrations | `jackc/pgx/v5` |
+| `github.com/kararnab/iam/pgstore/v2` | PostgreSQL stores, shared rate limiter and migrations | `jackc/pgx/v5` |
 | `github.com/kararnab/iam/redisstore/v2` | Redis session store and shared rate limiter | `redis/go-redis/v9` |
 | `github.com/kararnab/iam/prometheus/v2` | Prometheus metrics | `prometheus/client_golang` |
 | `github.com/kararnab/iam/webauthn/v2` | passkeys and security keys | `go-webauthn/webauthn` |

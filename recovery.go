@@ -187,6 +187,19 @@ func (s *service) StartPasswordReset(ctx context.Context, req PasswordResetReque
 		report(subjectID, "store_error")
 		return nil, unavailableErr(err)
 	}
+	// The throttles above already counted this request, as they do for an
+	// unknown login, so declining here leaves the same trace.
+	if allow := s.cfg.Recovery.AllowReset; allow != nil {
+		ok, err := allow(ctx, subjectID, login)
+		if err != nil {
+			report(subjectID, "store_error")
+			return nil, unavailableErr(err)
+		}
+		if !ok {
+			report(subjectID, "declined")
+			return nil, nil
+		}
+	}
 
 	issued, err := s.issue(ctx, onetime.Token{Purpose: onetime.PasswordReset, SubjectID: subjectID, Login: login}, s.cfg.Recovery.ResetTTL)
 	if err != nil {

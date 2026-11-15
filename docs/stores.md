@@ -9,11 +9,11 @@ live in `memstore` (core), and durable ones in the `pgstore` and
 | `iam.SubjectLoader` + `iam.IdentityStore` (= `iam.UserStore`) | subjects, roles, linked identities | `Users` | `Users` | – |
 | `password.CredentialStore` | password hashes by login | `Users` | `Users` | – |
 | `session.Store` | sessions and rotated token hashes | `Sessions` | `Sessions` | `Sessions` |
-| `invite.Store` | invites | `Invites` | `Invites` | – |
+| `invite.Store` (+ optional `invite.Manager`) | invites | `Invites` | `Invites` | – |
 | `onetime.Store` | password-reset and verification tokens | `Tokens` | `Tokens` | – |
 | `mfa.Store` | TOTP factors and recovery-code hashes | `MFA` | `MFA` | – |
 | `passkey.Store` | WebAuthn credentials (public keys) | `Passkeys` | `Passkeys` | – |
-| `ratelimit.Limiter` | failure counters | `ratelimit.Memory` | – | `Limiter` |
+| `ratelimit.Limiter` | failure counters | `ratelimit.Memory` | `Limiter` | `Limiter` |
 
 Users are **application-owned**. If you already have a users table,
 implement `iam.UserStore` over it and use IAM's stores only for sessions and
@@ -39,15 +39,35 @@ cfg := iam.Config{
   are safe. You can also copy the SQL into your own migration tool.
 - Tables are prefixed `iam_`. `iam_sessions.subject_id` deliberately has no
   foreign key, so sessions also work with your own users table.
-- Run `(*pgstore.Sessions).PurgeExpired` (a `session.Purger`) and
-  `(*pgstore.Tokens).PurgeExpired` periodically. Expired sessions and tokens are rejected anyway; this only
-  reclaims space.
+- Run `(*pgstore.Sessions).PurgeExpired` (a `session.Purger`),
+  `(*pgstore.Tokens).PurgeExpired` and, if you use it,
+  `(*pgstore.Limiter).PurgeExpired` periodically. Expired rows are ignored
+  anyway; this only reclaims space.
+
+### Rate limiting
+
+`pgstore.Limiter` is a shared `ratelimit.Limiter` in the table
+`iam_rate_limits` (migration 0005), for deployments with several instances
+and PostgreSQL but no Redis. Without a shared limiter each instance counts
+failures separately, so N instances give an attacker N times the budget.
+
+```go
+perLogin, _ := pgstore.NewLimiter(pool, ratelimit.Config{Threshold: 5})
+perIP, _ := pgstore.NewLimiter(pool, ratelimit.Config{Threshold: 100})
+cfg.RateLimit = iam.RateLimitConfig{PerLogin: perLogin, PerIP: perIP}
+```
+
+It has the same semantics as `ratelimit.Memory` and `redisstore.Limiter`
+(all three pass `storetest.Limiter`). `Check` runs on every attempt and is
+one query. `Fail` runs only after a failure: a short transaction that locks
+the key's row, so concurrent failures are all counted.
 
 ### With your own user table
 
 If you implement `iam.UserStore` over your own tables, you need only the
 tables that do not hold users (`iam_sessions`, `iam_rotated_tokens`,
-`iam_invites`, `iam_one_time_tokens`, `iam_mfa_totp`, `iam_passkeys`). Create just those:
+`iam_invites`, `iam_one_time_tokens`, `iam_mfa_totp`, `iam_passkeys`,
+`iam_rate_limits`). Create just those:
 
 ```go
 if err := pgstore.MigrateSessions(ctx, pool); err != nil { ... }
@@ -92,8 +112,8 @@ limiter, _ := redisstore.NewLimiter(rdb, "", ratelimit.Config{Threshold: 5})
 
 All keys share one hash tag, so the Lua scripts stay atomic on Redis
 Cluster. Session keys expire at the session's absolute expiry. Use the
-Redis limiter when you run more than one instance; the in-memory limiter
-counts per process.
+Redis limiter (or `pgstore.Limiter`) when you run more than one instance;
+the in-memory limiter counts per process.
 
 ## Writing a store
 
@@ -107,6 +127,13 @@ Read the interface documentation. The contracts that matter most:
   until the session is deleted. That is how reuse is detected.
 - **`invite.Store.Consume` and `onetime.Store.Consume` must be atomic:** at
   most one caller wins.
+- Optionally implement **`invite.Manager`** (`ListUsable`, `DeleteUsable`,
+  `Replace`) for `iam.InviteAdmin`, so an admin screen needs no SQL of its
+  own. `Replace` must be atomic: delete the old invite only if it is still
+  usable, and create the new one in the same step. `storetest.InviteManager`
+  is its conformance suite.
+- A shared `ratelimit.Limiter` must match `ratelimit.Memory`; run
+  `storetest.Limiter` against it.
 - Return the package's sentinel errors (`session.ErrNotFound`,
   `session.ErrConflict`, `iam.ErrNotFound`, `iam.ErrConflict`,
   `invite.ErrInvalid`, ...), because callers branch on them.
