@@ -4,18 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-Each module is tagged separately and the versions move together: `v2.3.0`
-for the core module, and `oidc/v2.3.0`, `paseto/v2.3.0`, `pgstore/v2.3.0`,
-`redisstore/v2.3.0`, `prometheus/v2.3.0` and `webauthn/v2.3.0` for the
+Each module is tagged separately and the versions move together: `v2.4.0`
+for the core module, and `oidc/v2.4.0`, `paseto/v2.4.0`, `pgstore/v2.4.0`,
+`redisstore/v2.4.0`, `prometheus/v2.4.0` and `webauthn/v2.4.0` for the
 sub-modules.
 
 ## [Unreleased]
+
+## [2.4.0] — 2026-11-16
 
 Fixes for gaps found while integrating iam into CodeAtlas, where the
 application had to copy iam's internal throttle keys or write SQL against
 iam's tables. Everything is additive or opt-in; no existing method or
 interface changes. `pgstore` adds migration 0005 (`iam_rate_limits`) in
-both the full and the session set.
+both the full and the session set. The sub-modules require core `v2.4.0`.
 
 ### Added
 
@@ -357,7 +359,8 @@ requires for major versions above 1.
   ever committed**: `.env` (`JWT_SECRET_KEY`) was tracked in git history
   before this release.
 
-[Unreleased]: https://github.com/kararnab/iam/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/kararnab/iam/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/kararnab/iam/releases/tag/v2.4.0
 [2.3.0]: https://github.com/kararnab/iam/releases/tag/v2.3.0
 [2.2.0]: https://github.com/kararnab/iam/releases/tag/v2.2.0
 [2.1.0]: https://github.com/kararnab/iam/releases/tag/v2.1.0
