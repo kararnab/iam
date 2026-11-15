@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/kararnab/iam/v2/mfa"
 	"github.com/kararnab/iam/v2/onetime"
 	"github.com/kararnab/iam/v2/passkey"
+	"github.com/kararnab/iam/v2/ratelimit"
 	"github.com/kararnab/iam/v2/session"
 	"github.com/kararnab/iam/v2/storetest"
 )
@@ -45,7 +47,7 @@ func emptyPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS iam_rotated_tokens, iam_sessions, iam_invites,
-		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_passkeys, iam_schema_migrations,
+		iam_identities, iam_credentials, iam_subjects, iam_one_time_tokens, iam_mfa_totp, iam_passkeys, iam_rate_limits, iam_schema_migrations,
 		iam_schema_migrations_sessions, iam_schema_migrations_users CASCADE`); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestMigrateIsIdempotentAndConcurrent(t *testing.T) {
 		}
 	}
 	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM iam_schema_migrations`).Scan(&n); err != nil || n != 4 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM iam_schema_migrations`).Scan(&n); err != nil || n != 5 {
 		t.Fatalf("migrations recorded = %d, %v", n, err)
 	}
 }
@@ -80,8 +82,20 @@ func TestConformance(t *testing.T) {
 	t.Run("invites", func(t *testing.T) {
 		storetest.Invites(t, func(t *testing.T) invite.Store { return NewInvites(newPool(t)) })
 	})
+	t.Run("invite manager", func(t *testing.T) {
+		storetest.InviteManager(t, func(t *testing.T) storetest.ManagedInviteStore { return NewInvites(newPool(t)) })
+	})
 	t.Run("tokens", func(t *testing.T) {
 		storetest.Tokens(t, func(t *testing.T) onetime.Store { return NewTokens(newPool(t)) })
+	})
+	t.Run("limiter", func(t *testing.T) {
+		storetest.Limiter(t, func(t *testing.T, cfg ratelimit.Config) ratelimit.Limiter {
+			l, err := NewLimiter(newPool(t), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return l
+		})
 	})
 	t.Run("mfa", func(t *testing.T) {
 		storetest.MFA(t, func(t *testing.T) mfa.Store { return NewMFA(newPool(t)) })
@@ -208,5 +222,34 @@ func TestPartialSetAfterMigrateConflicts(t *testing.T) {
 	}
 	if err := MigrateUsers(ctx, pool); !errors.Is(err, ErrMigrationSetConflict) {
 		t.Fatalf("MigrateUsers after Migrate = %v, want ErrMigrationSetConflict", err)
+	}
+}
+
+func TestLimiterPurgeExpired(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	now := time.Now().Truncate(time.Second)
+	l, err := NewLimiter(pool, ratelimit.Config{Threshold: 2, Window: time.Minute, BaseDelay: time.Hour, MaxDelay: time.Hour,
+		Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = l.Fail(ctx, "short")
+	for range 2 {
+		_, _ = l.Fail(ctx, "blocked") // blocked for an hour: kept past the window
+	}
+
+	if n, err := l.PurgeExpired(ctx, now.Add(59*time.Second)); err != nil || n != 0 {
+		t.Fatalf("purge inside the window = %d, %v", n, err)
+	}
+	// Expiry is inclusive: at the end of the window the row is dead.
+	if n, err := l.PurgeExpired(ctx, now.Add(time.Minute)); err != nil || n != 1 {
+		t.Fatalf("purge at the end of the window = %d, %v", n, err)
+	}
+	if r, err := l.Check(ctx, "blocked"); err != nil || r.Allowed || r.Failures != 2 {
+		t.Fatalf("blocked key after purge = %+v, %v", r, err)
+	}
+	if n, err := l.PurgeExpired(ctx, now.Add(time.Hour)); err != nil || n != 1 {
+		t.Fatalf("purge after the block = %d, %v", n, err)
 	}
 }

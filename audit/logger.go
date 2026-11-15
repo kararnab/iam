@@ -33,11 +33,13 @@ const (
 	EventSignup             EventType = "signup"
 	EventInviteCreated      EventType = "invite_created"
 	EventInviteConsumed     EventType = "invite_consumed"
+	EventInviteRevoked      EventType = "invite_revoked"
 	EventRateLimited        EventType = "rate_limited"
 	EventLockout            EventType = "lockout"
 
 	EventPasswordResetRequested     EventType = "password_reset_requested"
 	EventPasswordReset              EventType = "password_reset"
+	EventPasswordChanged            EventType = "password_changed"
 	EventEmailVerificationRequested EventType = "email_verification_requested"
 	EventEmailVerified              EventType = "email_verified"
 

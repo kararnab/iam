@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,5 +87,66 @@ func (m *Invites) Delete(_ context.Context, id string) error {
 			delete(m.byHash, k)
 		}
 	}
+	return nil
+}
+
+var _ invite.Manager = (*Invites)(nil)
+
+// ListUsable implements invite.Manager.
+func (m *Invites) ListUsable(_ context.Context, now time.Time) ([]*invite.Invite, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []*invite.Invite
+	for _, inv := range m.byHash {
+		if inv.Usable(now) {
+			out = append(out, copyInvite(inv))
+		}
+	}
+	slices.SortFunc(out, func(a, b *invite.Invite) int {
+		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return out, nil
+}
+
+// deleteUsableLocked removes id if it is usable at now, or says why not.
+func (m *Invites) deleteUsableLocked(id string, now time.Time) error {
+	for k, inv := range m.byHash {
+		if inv.ID != id {
+			continue
+		}
+		if !inv.Usable(now) {
+			return invite.ErrInvalid
+		}
+		delete(m.byHash, k)
+		return nil
+	}
+	return invite.ErrNotFound
+}
+
+// DeleteUsable implements invite.Manager.
+func (m *Invites) DeleteUsable(_ context.Context, id string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.deleteUsableLocked(id, now)
+}
+
+// Replace implements invite.Manager.
+func (m *Invites) Replace(_ context.Context, oldID string, now time.Time, inv *invite.Invite) error {
+	k, ok := key(inv.TokenHash)
+	if !ok {
+		return errors.New("memstore: invalid token hash")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.byHash[k]; exists {
+		return errors.New("memstore: token hash already exists")
+	}
+	if err := m.deleteUsableLocked(oldID, now); err != nil {
+		return err
+	}
+	m.byHash[k] = copyInvite(inv)
 	return nil
 }

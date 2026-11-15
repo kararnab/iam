@@ -1,6 +1,7 @@
 package iam
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -88,6 +89,18 @@ type RecoveryConfig struct {
 	// VerificationTTL is the lifetime of an email-verification token.
 	// Default 48 hours, max 30 days.
 	VerificationTTL time.Duration
+
+	// AllowReset, when set, is asked before StartPasswordReset issues a
+	// token, for an application rule such as "at most 5 reset emails per
+	// account a day". It runs after the throttles, once the login is known
+	// to belong to an active subject, immediately before the token is
+	// issued, so it can also record the attempt.
+	//
+	// Returning false declines: StartPasswordReset returns (nil, nil), and
+	// the throttles have counted the request exactly as for an unknown
+	// login, so a declined account cannot be told apart from a missing one.
+	// An error is treated as a store failure (ErrUnavailable).
+	AllowReset func(ctx context.Context, subjectID, login string) (bool, error)
 }
 
 // MFAConfig enables TOTP multi-factor authentication (see MFA). It is off

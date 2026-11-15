@@ -1,6 +1,7 @@
 package iam_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -274,5 +275,64 @@ func TestEmailVerification(t *testing.T) {
 	}
 	if !f.audit.has(audit.EventEmailVerificationRequested) || !f.audit.has(audit.EventEmailVerified) {
 		t.Fatal("missing audit events")
+	}
+}
+
+func TestAllowResetDeclinesLikeAnUnknownLogin(t *testing.T) {
+	type call struct{ subjectID, login string }
+	var calls []call
+	allow := true
+	f := newFixture(t, func(c *iam.Config) {
+		withRecovery(c)
+		c.Recovery.AllowReset = func(_ context.Context, subjectID, login string) (bool, error) {
+			calls = append(calls, call{subjectID, login})
+			return allow, nil
+		}
+	})
+	rec := recovery(t, f)
+
+	if issued, err := rec.StartPasswordReset(ctx, iam.PasswordResetRequest{Login: " Admin@Example.com "}); err != nil || issued == nil {
+		t.Fatalf("allowed = %+v, %v", issued, err)
+	}
+	if len(calls) != 1 || calls[0] != (call{"s-admin", "admin@example.com"}) {
+		t.Fatalf("AllowReset calls = %+v", calls)
+	}
+	// Unknown logins never reach the hook.
+	if _, err := rec.StartPasswordReset(ctx, iam.PasswordResetRequest{Login: "nobody@example.com"}); err != nil || len(calls) != 1 {
+		t.Fatalf("unknown login: %v, calls %d", err, len(calls))
+	}
+
+	// Declined: the same answer as an unknown login, and the same throttle
+	// accounting, so both are throttled after the same number of requests.
+	allow = false
+	client := iam.ClientInfo{IP: "198.51.100.20"}
+	throttledAfter := func(login string) int {
+		for i := range 10 {
+			issued, err := rec.StartPasswordReset(ctx, iam.PasswordResetRequest{Login: login, Client: client})
+			var rl *iam.RateLimitError
+			if errors.As(err, &rl) {
+				return i
+			}
+			if issued != nil || err != nil {
+				t.Fatalf("%s request %d = %+v, %v", login, i, issued, err)
+			}
+		}
+		return -1
+	}
+	declined := throttledAfter("admin@example.com") // one allowed request above counts too
+	client.IP = "198.51.100.21"
+	unknown := throttledAfter("ghost@example.com")
+	if declined != 4 || unknown != 5 {
+		t.Fatalf("throttled after: declined %d (plus 1 earlier), unknown %d", declined, unknown)
+	}
+}
+
+func TestAllowResetErrorIsUnavailable(t *testing.T) {
+	f := newFixture(t, func(c *iam.Config) {
+		withRecovery(c)
+		c.Recovery.AllowReset = func(context.Context, string, string) (bool, error) { return false, errors.New("db down") }
+	})
+	if issued, err := recovery(t, f).StartPasswordReset(ctx, iam.PasswordResetRequest{Login: "admin@example.com"}); issued != nil || !errors.Is(err, iam.ErrUnavailable) {
+		t.Fatalf("= %+v, %v", issued, err)
 	}
 }

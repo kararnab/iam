@@ -13,7 +13,7 @@
 // or copy the files into your own migration tool.
 //
 // An application that implements iam.UserStore over its own tables needs
-// only the session, invite and one-time token tables: run MigrateSessions instead, or copy
+// only the session, invite, token and rate-limit tables: run MigrateSessions instead, or copy
 // SessionMigrations. UserMigrations holds the rest. The two sets together
 // create exactly the tables of the full set.
 package pgstore
@@ -48,7 +48,7 @@ var Migrations embed.FS
 
 // SessionMigrations holds the migrations for every table that does not
 // hold pgstore's own users (iam_sessions, iam_rotated_tokens, iam_invites,
-// iam_one_time_tokens, iam_mfa_totp, iam_passkeys), under
+// iam_one_time_tokens, iam_mfa_totp, iam_passkeys, iam_rate_limits), under
 // migrations/sessions/. MigrateSessions applies it.
 //
 //go:embed migrations/sessions/*.sql

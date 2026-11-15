@@ -37,6 +37,17 @@ func TestSessionsConformance(t *testing.T) {
 	})
 }
 
+func TestLimiterConformance(t *testing.T) {
+	storetest.Limiter(t, func(t *testing.T, cfg ratelimit.Config) ratelimit.Limiter {
+		rdb, prefix := newClient(t)
+		l, err := NewLimiter(rdb, prefix, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	})
+}
+
 func TestSessionKeysExpire(t *testing.T) {
 	rdb, prefix := newClient(t)
 	s := NewSessions(rdb, prefix)

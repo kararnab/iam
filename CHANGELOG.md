@@ -11,6 +11,54 @@ sub-modules.
 
 ## [Unreleased]
 
+Fixes for gaps found while integrating iam into CodeAtlas, where the
+application had to copy iam's internal throttle keys or write SQL against
+iam's tables. Everything is additive or opt-in; no existing method or
+interface changes. `pgstore` adds migration 0005 (`iam_rate_limits`) in
+both the full and the session set.
+
+### Added
+
+- `iam.Passwords` (`ChangePassword`), implemented by the Service from `New`:
+  a signed-in subject changes their password. The current password is
+  checked under the login throttles and keys, so the change form and the
+  sign-in form share one budget; a rejected new password costs no attempt;
+  other sessions and outstanding reset tokens are revoked. New error
+  `iam.ErrPasswordsNotConfigured`, audit event `password_changed`, metrics
+  `password_changed` and `password_change_failure`
+  ([#31](https://github.com/kararnab/iam/issues/31)).
+- `iam.RecoveryConfig.AllowReset`: an application rule (such as a
+  per-account cap on reset emails) asked just before `StartPasswordReset`
+  issues a token. Declining answers `(nil, nil)` with the throttles counted
+  exactly as for an unknown login; the audit reason is `declined`
+  ([#32](https://github.com/kararnab/iam/issues/32)).
+- `iam.InviteAdmin` (`ListPendingInvites`, `RevokePendingInvite`,
+  `ReplaceInvite`) and the optional store interface `invite.Manager`
+  (`ListUsable`, `DeleteUsable`, `Replace`), implemented by
+  `memstore.Invites` and `pgstore.Invites`, with the conformance suite
+  `storetest.InviteManager`. New error `iam.ErrInvitesNotManaged`, audit
+  event `invite_revoked`
+  ([#33](https://github.com/kararnab/iam/issues/33)).
+- `pgstore.Limiter`: a shared `ratelimit.Limiter` on PostgreSQL (table
+  `iam_rate_limits`, migration 0005), with `PurgeExpired`, for
+  multi-instance deployments without Redis. The conformance suite
+  `storetest.Limiter` states `ratelimit.Memory`'s semantics; Memory,
+  `redisstore.Limiter` and `pgstore.Limiter` all pass it
+  ([#34](https://github.com/kararnab/iam/issues/34)).
+- `iam.NewServices` and `iam.Services`: the default implementation with
+  `Recovery`, `MFA`, `Passwords` and `InviteAdmin` typed, so no type
+  assertion is needed ([#36](https://github.com/kararnab/iam/issues/36)).
+
+### Changed
+
+- `httpauth`: when a credential check fails because the request's own
+  context ended (the client went away, or a deadline passed), the error
+  passed to the `ErrorHandler` also wraps `context.Canceled` or
+  `context.DeadlineExceeded`. It still wraps `httpauth.ErrUnavailable`, with
+  status 503, so existing handlers behave as before; handlers can now tell an
+  abandoned request from a store outage
+  ([#35](https://github.com/kararnab/iam/issues/35)).
+
 ## [2.3.0] — 2026-10-10
 
 Fixes for gaps found while integrating iam into an application

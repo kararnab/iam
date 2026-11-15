@@ -68,3 +68,22 @@ type Store interface {
 	// Delete removes an invite (revocation). Missing is not an error.
 	Delete(ctx context.Context, id string) error
 }
+
+// Manager is optionally implemented by a Store, for administration
+// screens; iam.InviteAdmin needs it. Every method decides usability at the
+// time it is given, like Consume.
+type Manager interface {
+	// ListUsable returns the invites usable at now, newest first.
+	ListUsable(ctx context.Context, now time.Time) ([]*Invite, error)
+
+	// DeleteUsable removes the invite only if it is usable at now. It
+	// returns ErrNotFound for a missing invite and ErrInvalid for a used or
+	// expired one, which it keeps.
+	DeleteUsable(ctx context.Context, id string, now time.Time) error
+
+	// Replace atomically removes the invite oldID, which must be usable at
+	// now, and creates inv. On ErrNotFound or ErrInvalid (as for
+	// DeleteUsable) nothing changes, so of two concurrent replacements of
+	// one invite at most one succeeds.
+	Replace(ctx context.Context, oldID string, now time.Time, inv *Invite) error
+}

@@ -12,7 +12,7 @@ svc, _ := iam.New(iam.Config{
         Issuer: "My App",          // shown in authenticator apps
     },
 })
-m := svc.(iam.MFA) // the Service returned by New implements it
+m := svc.(iam.MFA) // or use iam.NewServices and its typed MFA field
 ```
 
 | Setting | Default |

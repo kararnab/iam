@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kararnab/iam/v2"
 	"github.com/kararnab/iam/v2/audit"
@@ -518,6 +519,49 @@ func TestStoreFailureIsServiceUnavailable(t *testing.T) {
 				if !errors.Is(gotErr, httpauth.ErrUnavailable) || !errors.Is(gotErr, iam.ErrUnavailable) {
 					t.Fatalf("error handler got %v", gotErr)
 				}
+				if errors.Is(gotErr, context.Canceled) {
+					t.Fatalf("a store failure reported as a cancellation: %v", gotErr)
+				}
+			}
+		})
+	}
+}
+
+// A check that fails because the request's own context ended is still
+// ErrUnavailable (handlers answer it as before), but also carries the
+// context error, so it can be told apart from a store outage.
+func TestEndedRequestIsReportedAsSuch(t *testing.T) {
+	var gotErr error
+	auth, err := httpauth.New(httpauth.Config{
+		Service: unavailableSvc{},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, status int, err error) {
+			gotErr = err
+			w.WriteHeader(status)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := auth.Protect(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("handler ran") }))
+	valid, _ := session.NewSecret()
+
+	for name, end := range map[string]func(context.Context) (context.Context, context.CancelFunc){
+		"canceled": context.WithCancel,
+		"deadline": func(ctx context.Context) (context.Context, context.CancelFunc) {
+			return context.WithDeadline(ctx, time.Now().Add(-time.Second))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gotErr = nil
+			ctx, cancel := end(context.Background())
+			cancel()
+			r := httptest.NewRequestWithContext(ctx, "GET", "/", nil)
+			r.Header.Set("Cookie", "__Host-session="+valid)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			want := map[string]error{"canceled": context.Canceled, "deadline": context.DeadlineExceeded}[name]
+			if w.Code != http.StatusServiceUnavailable || !errors.Is(gotErr, httpauth.ErrUnavailable) || !errors.Is(gotErr, want) {
+				t.Fatalf("status %d, error %v; want 503 wrapping ErrUnavailable and %v", w.Code, gotErr, want)
 			}
 		})
 	}

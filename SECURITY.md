@@ -100,10 +100,11 @@ Security fixes go into the latest v2 release.
   source control, and rotate them (`keys.MemoryProvider.Rotate`, then
   `Prune` after one token lifetime).
 - With more than one instance, share the stores (PostgreSQL or Redis), the
-  rate limiter (`redisstore.Limiter`), the signing keys, and the CSRF key
+  rate limiter (`redisstore.Limiter` or `pgstore.Limiter`), the signing keys, and the CSRF key
   (`CSRFConfig.Key`).
 - Configure `TrustedProxies` to match your load balancers.
 - Alert on `refresh_reuse_detected` and on bursts of `lockout` and
   `login_failure`.
-- Run `pgstore.(*Sessions).PurgeExpired` periodically.
+- Run `pgstore.(*Sessions).PurgeExpired` (and `(*Limiter).PurgeExpired` if
+  you use it) periodically.
 - Keep dependencies current; CI runs `govulncheck`.

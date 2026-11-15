@@ -121,6 +121,13 @@ var (
 	// the credential could not be checked because a store failed. It wraps
 	// iam.ErrUnavailable. The request is not treated as anonymous: that
 	// would make a signed-in user look signed out during an outage.
+	//
+	// When the check failed because the request's own context ended (the
+	// client went away, or a server timeout expired), the error passed
+	// also wraps that context error, so
+	// errors.Is(err, context.Canceled) or context.DeadlineExceeded tells
+	// an abandoned request from a store outage. It still wraps
+	// ErrUnavailable, so existing handlers answer it as before.
 	ErrUnavailable = fmt.Errorf("httpauth: %w", iam.ErrUnavailable)
 
 	// ErrMFARequired is passed to the ErrorHandler by RequireMFA. It wraps
@@ -269,7 +276,8 @@ func isSafeMethod(method string) bool {
 //     including unauthenticated ones such as login forms;
 //  2. identifies the caller from the session cookie or the Authorization
 //     header; invalid credentials make the request anonymous, while a store
-//     failure while checking them answers 503 with ErrUnavailable;
+//     failure while checking them answers 503 with ErrUnavailable (which
+//     also wraps the context error when the request itself ended);
 //  3. for unsafe methods authenticated by cookie, requires the per-session
 //     CSRF token (header or form field).
 //
@@ -290,7 +298,12 @@ func (m *Middleware) Protect(next http.Handler) http.Handler {
 
 		st, err := m.identify(r)
 		if err != nil {
-			m.onError(w, r, http.StatusServiceUnavailable, ErrUnavailable)
+			reported := ErrUnavailable
+			if ctxErr := r.Context().Err(); ctxErr != nil {
+				// Not an outage: the request ended while it was checked.
+				reported = fmt.Errorf("%w: %w", ErrUnavailable, ctxErr)
+			}
+			m.onError(w, r, http.StatusServiceUnavailable, reported)
 			return
 		}
 		if st != nil && st.mode == session.ModeCookie && !m.csrf.Disabled && !isSafeMethod(r.Method) {

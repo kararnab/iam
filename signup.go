@@ -199,17 +199,29 @@ func (s *service) CreateInvite(ctx context.Context, req InviteRequest) (*IssuedI
 	if s.cfg.Signup.Invites == nil {
 		return nil, errors.New("iam: invites are not configured")
 	}
+	inv, tok, err := s.newInvite(req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.cfg.Signup.Invites.Create(ctx, inv); err != nil {
+		return nil, err
+	}
+	s.auditInviteCreated(ctx, inv)
+	return &IssuedInvite{ID: inv.ID, Token: tok, ExpiresAt: inv.ExpiresAt}, nil
+}
+
+// newInvite builds the record for req and returns it with its token.
+func (s *service) newInvite(req InviteRequest) (*invite.Invite, string, error) {
 	ttl := req.TTL
 	if ttl == 0 {
 		ttl = s.cfg.Signup.InviteTTL
 	}
 	if ttl < 0 || ttl > 90*24*time.Hour {
-		return nil, errors.New("iam: invite TTL must be between 0 and 90 days")
+		return nil, "", errors.New("iam: invite TTL must be between 0 and 90 days")
 	}
-
 	now := s.cfg.Now()
 	tok, hash := session.NewSecret()
-	inv := &invite.Invite{
+	return &invite.Invite{
 		ID:        rand.Text(),
 		TokenHash: hash,
 		Email:     strings.ToLower(strings.TrimSpace(req.Email)),
@@ -217,14 +229,13 @@ func (s *service) CreateInvite(ctx context.Context, req InviteRequest) (*IssuedI
 		CreatedBy: req.CreatedBy,
 		CreatedAt: now,
 		ExpiresAt: now.Add(ttl),
-	}
-	if err := s.cfg.Signup.Invites.Create(ctx, inv); err != nil {
-		return nil, err
-	}
+	}, tok, nil
+}
 
+func (s *service) auditInviteCreated(ctx context.Context, inv *invite.Invite) {
 	s.audit(ctx, audit.Event{
 		Type:      audit.EventInviteCreated,
-		SubjectID: req.CreatedBy,
+		SubjectID: inv.CreatedBy,
 		Message:   "invite created",
 		Attrs: map[string]string{
 			"invite_id":   inv.ID,
@@ -232,7 +243,6 @@ func (s *service) CreateInvite(ctx context.Context, req InviteRequest) (*IssuedI
 			"email_bound": boolString(inv.Email != ""),
 		},
 	})
-	return &IssuedInvite{ID: inv.ID, Token: tok, ExpiresAt: inv.ExpiresAt}, nil
 }
 
 func (s *service) RevokeInvite(ctx context.Context, inviteID string) error {
